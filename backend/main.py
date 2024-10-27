@@ -1,11 +1,16 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import shutil
 import os
 import psycopg2
 import pandas as pd
 import re
 from dotenv import load_dotenv
+from crewai import Agent, Task, Crew
+from crewai_tools import PGSearchTool
+from langchain_openai import ChatOpenAI
+
 
 app = FastAPI()
 
@@ -28,6 +33,9 @@ DB_USER = os.getenv('POSTGRES_USER')
 DB_PASSWORD = os.getenv('POSTGRES_PASSWORD')
 DB_NAME = os.getenv('POSTGRES_DB')
 DB_HOST = os.getenv('POSTGRES_HOST')
+DB_PORT = os.getenv('POSTGRES_PORT')
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL_NAME = os.getenv("CREWAI_OPENAI_MODEL", "gpt-4o")
 
 # Connect to PostgreSQL
 def get_db_connection():
@@ -39,7 +47,8 @@ def get_db_connection():
         port=DB_PORT
     )
 
-DB_PORT = os.getenv('POSTGRES_PORT')
+
+
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -60,18 +69,92 @@ async def upload_file(file: UploadFile = File(...)):
     return {"info": f"file '{file.filename}' saved at '{file_location}'"}
 
 
+class FileNameRequest(BaseModel):
+    table_name: str
+    page: int = 1  # Default to page 1
+    page_size: int = 10  # Default page size is 10 rows
+
 @app.get("/get-tables")
 async def get_files():
-    conn = get_db_connection()
-    cur = conn.cursor()
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
-    files = [row[0] for row in cur.fetchall()]
+        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+        files = [row[0] for row in cur.fetchall()]
 
-    cur.close()
-    conn.close()
+        cur.close()
+        conn.close()
 
-    return files  # Returns the list of filenames
+        return files  # Returns the list of filenames
+    except psycopg2.DatabaseError as e:
+        print(f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching tables.")
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+
+
+@app.post("/get-table")
+async def get_table(request: FileNameRequest):
+    table_name = request.table_name
+    page = request.page
+    page_size = request.page_size
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Check if the table exists
+        cur.execute(f"SELECT to_regclass('{table_name}')")
+        table_exists = cur.fetchone()[0]
+        if not table_exists:
+            raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
+
+        # Fetch total number of rows for pagination
+        cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+        total_rows = cur.fetchone()[0]
+
+        # Calculate offset for pagination
+        offset = (page - 1) * page_size
+
+        # Fetch rows from the table with LIMIT and OFFSET
+        cur.execute(f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}")
+        rows = cur.fetchall()
+
+        # Get the column names from the cursor description (ensures correct order)
+        columns = [desc[0] for desc in cur.description]
+
+        # Convert column types to React-compatible types (e.g., from information_schema if needed)
+        cur.execute(f"""
+            SELECT column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_name = '{table_name}';
+        """)
+        columns_and_types = cur.fetchall()
+        columns_and_types = convert_postgres_to_react(columns_and_types)
+
+        cur.close()
+        conn.close()
+
+        # Build the table object
+        table_data = {
+            "header": {col_name: col_type for col_name, col_type in columns_and_types},  # Create header as a key-value map
+            "rows": [dict(zip(columns, row)) for row in rows],  # Use correct column ordering from cur.description
+            "page": page,
+            "page_size": page_size,
+            "total_rows": total_rows,
+            "total_pages": (total_rows + page_size - 1) // page_size
+        }
+
+        return table_data  # Return table object with columns and rows
+    except psycopg2.DatabaseError as e:
+        print(f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching table data.")
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+
 
 
 def ingest_file(file_path: str, table_name: str):
@@ -146,3 +229,22 @@ def sanitize_column_name(col_name: str) -> str:
     clean_col_name = clean_col_name.lower()
     
     return clean_col_name
+
+def convert_postgres_to_react(columns_and_types):
+    # Define a mapping from PostgreSQL types to TypeScript types
+    postgres_to_react_map = {
+        "text": "string",
+        "boolean": "boolean",
+        "integer": "number",
+        "double precision": "number",
+        "timestamp": "string",  # You can use "Date" here if you want to handle date objects in React
+        "float": "number",
+    }
+    
+    # Convert types from PostgreSQL to React
+    for i in range(len(columns_and_types)):
+        column_name, postgres_type = columns_and_types[i]
+        react_type = postgres_to_react_map.get(postgres_type, "any")  # Default to 'any' if type not found
+        columns_and_types[i] = (column_name, react_type)
+
+    return columns_and_types

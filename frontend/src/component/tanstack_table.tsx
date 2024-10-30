@@ -49,7 +49,7 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
   
     setAiContextArray((prevArray) => {
       // Check if the object already exists in the array based on column and row
-      const exists = ifExists(newObject.column, newObject.row);
+      const exists = ifExists(newObject.tableName, newObject.column, newObject.row);
       console.log(exists)
       // If it exists, remove it; otherwise, add it to the array
       if (exists) {
@@ -63,13 +63,11 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
     });
   };
 
-  const ifExists = (column: string, row: number) => {
+  const ifExists = (tableName: string, column: string, row: number) => {
     return aiContextArray.some(
-      (obj) => obj.column === column && obj.row === row
+      (obj) => obj.column === column && obj.row === row && obj.tableName === tableName
     );
   };
-  
-  
 
   const columns = useMemo(() => {
     return Object.keys(table.header).map((key) =>
@@ -169,7 +167,7 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
                       style={{
                         width: cell.column.getSize(),
                         position: 'relative',
-                        backgroundColor: ifExists(cell.column.id, row.index) ? '#F8B195' : 'white',
+                        backgroundColor: ifExists(tableName, cell.column.id, row.index) ? '#F8B195' : 'white',
                       }}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

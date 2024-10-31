@@ -6,6 +6,8 @@ from qa_with_postgres.routes import router as api_router
 
 app = FastAPI()
 
+print("Loading environment variables...")
+
 load_dotenv()
 
 app.add_middleware(

@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { useFetchTables } from '../hooks/fetch_hooks/useFetchTables';
 
 interface UploadWindowProps {
-  onSuccessfulUpload: () => void;  // Define a callback prop for successful upload
+  onSuccessfulUpload: () => void;
 }
 
 const UploadWindow: React.FC<UploadWindowProps> = ({ onSuccessfulUpload }) => {
   const [file, setFile] = useState<File | null>(null);
+  const [errorMsg, setErrMsg] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null); // Create a ref for the input element
+  const tables = useFetchTables();
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -28,12 +32,18 @@ const UploadWindow: React.FC<UploadWindowProps> = ({ onSuccessfulUpload }) => {
 
       if (response.ok) {
         console.log('File uploaded successfully');
-        onSuccessfulUpload();  // Trigger the callback to reload the file list
+        onSuccessfulUpload();
+        setFile(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       } else {
         console.error('Error uploading file');
+        setErrMsg('Error uploading file');
       }
     } catch (error) {
       console.error('Error:', error);
+      setErrMsg('Error uploading file');
     }
   };
 
@@ -41,9 +51,15 @@ const UploadWindow: React.FC<UploadWindowProps> = ({ onSuccessfulUpload }) => {
     <div className="upload-section">
       <h2>Upload CSV File</h2>
       <div className="upload-section-input">
-        <input type="file" accept=".csv" onChange={handleFileUpload} />
+        <input
+          type="file"
+          accept=".csv"
+          onChange={handleFileUpload}
+          ref={fileInputRef} // Attach the ref to the input element
+        />
         <button className="upload-button" onClick={uploadFile}>Upload</button>
       </div>
+      {errorMsg && <p className="error-message" style={{ color: 'red' }}>{errorMsg}</p>}
     </div>
   );
 };

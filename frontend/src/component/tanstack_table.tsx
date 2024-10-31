@@ -44,7 +44,9 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
 
   const [aiContextArray, setAiContextArray] = React.useState<AiContextObject[]>([]);
 
-  const handleCellClick = (tableName: string, column: string, row: number, value: any) => {
+  const handleCellClick = (tableName: string, column: string, row: number, value: any, isRowNumberColumn: boolean) => {
+
+    console.log(tableName, column, row, value, isRowNumberColumn)
     const newObject: AiContextObject = { tableName, column, row, value };
   
     setAiContextArray((prevArray) => {
@@ -70,14 +72,28 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
   };
 
   const columns = useMemo(() => {
-    return Object.keys(table.header).map((key) =>
+    // Helper column for Row Number
+    const rowNumberColumn = columnHelper.display({
+      id: 'rowNumber',  // Unique identifier for the column
+      header: '#',  // Column header label
+      cell: (info) => info.row.index + ((table.page - 1) * table.page_size) + 1,  // Render row number based on index, starting from 1
+      enableResizing: false,
+      size: 0,  // Set the size of the column to 0 to hide it
+    });
+  
+    // Map over the header keys to generate columns for each field
+    const dataColumns = Object.keys(table.header).map((key) =>
       columnHelper.accessor(key, {
         header: () => key.charAt(0).toUpperCase() + key.slice(1),
         cell: (info) => info.getValue(),
         enableResizing: true,
       })
     );
+  
+    // Include the Row Number column as the first column
+    return [rowNumberColumn, ...dataColumns];
   }, [table.header]);
+  
 
   const data = useMemo(() => table.rows, [table.rows]);
 
@@ -108,68 +124,83 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
-                    key={header.id}
-                    colSpan={header.colSpan}
-                    style={{
-                      width: header.getSize(),
-                      position: 'relative',
-                    }}
-                  >
+                  key={header.id}
+                  className={header.index === 0 ? 'row-number-cell' : ''}
+                  colSpan={header.colSpan}
+                  style={{
+                    backgroundColor: '#E0E0E0',
+                    width: header.getSize(),
+                    position: 'relative',
+                    textAlign: 'center',
+                  }}
+                >
                     {header.isPlaceholder
                       ? null
                       : flexRender(
                           header.column.columnDef.header,
                           header.getContext()
                         )}
-                    <div
-                      {...{
-                        onDoubleClick: () => header.column.resetSize(),
-                        onMouseDown: header.getResizeHandler(),
-                        onTouchStart: header.getResizeHandler(),
-                        className: `tbl_resizer ${
-                          reactTable.options.columnResizeDirection
-                        } ${
-                          header.column.getIsResizing() ? 'isResizing' : ''
-                        }`,
-                        style: {
-                          transform:
-                            columnResizeMode === 'onEnd' &&
-                            header.column.getIsResizing()
-                              ? `translateX(${
-                                  (reactTable.options.columnResizeDirection ===
-                                  'rtl'
-                                    ? -1
-                                    : 1) *
-                                  (reactTable.getState().columnSizingInfo
-                                    .deltaOffset ?? 0)
-                                }px)`
-                              : '',
-                        },
-                      }}
-                    />
+                    {/* Conditionally add resizer div only if it's not the row number column */}
+                    {header.index !== 0 && (
+                      <div
+                        {...{
+                          onDoubleClick: () => header.column.resetSize(),
+                          onMouseDown: header.getResizeHandler(),
+                          onTouchStart: header.getResizeHandler(),
+                          className: `tbl_resizer ${
+                            reactTable.options.columnResizeDirection
+                          } ${
+                            header.column.getIsResizing() ? 'isResizing' : ''
+                          }`,
+                          style: {
+                            transform:
+                              columnResizeMode === 'onEnd' &&
+                              header.column.getIsResizing()
+                                ? `translateX(${
+                                    (reactTable.options.columnResizeDirection === 'rtl'
+                                      ? -1
+                                      : 1) *
+                                    (reactTable.getState().columnSizingInfo.deltaOffset ?? 0)
+                                  }px)`
+                                : '',
+                          },
+                        }}
+                      />
+                    )}
                   </th>
                 ))}
               </tr>
             ))}
           </thead>
+
           <tbody>
             {reactTable.getRowModel().rows.map((row) => (
               <tr key={row.id}>
-                {row.getVisibleCells().map((cell) => {
+                {row.getVisibleCells().map((cell, index) => {
+                  const isRowNumberColumn = index === 0;
                   const header = reactTable
                     .getHeaderGroups()[0]
                     .headers.find((h) => h.column.id === cell.column.id);
 
                   return (
-                    <td
-                      key={cell.id}
-                      onClick={() => handleCellClick( tableName, cell.column.id, row.index, cell.getValue())}
-                      style={{
-                        width: cell.column.getSize(),
-                        position: 'relative',
-                        backgroundColor: ifExists(tableName, cell.column.id, row.index) ? '#F8B195' : 'white',
-                      }}
-                    >
+                      <td
+                        key={cell.id}
+                        onClick={() => handleCellClick(tableName, cell.column.id, row.index, cell.getValue(), isRowNumberColumn)}
+                        style={{
+                          width: cell.column.getSize(),
+                          position: 'relative',
+                          backgroundColor: 
+                          ifExists(tableName, cell.column.id, row.index) && !isRowNumberColumn
+                            ? '#F8B195'
+                            : isRowNumberColumn
+                            ? '#E0E0E0'
+                            : row.index % 2 === 0
+                            ? '#F5F5F5'
+                            : 'white',
+                          textAlign: 'center',
+                          padding: '0 4px',  // Minimal padding to fit the number tightly
+                        }}
+                      >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       <div
                         {...{

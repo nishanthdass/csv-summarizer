@@ -9,12 +9,10 @@ export function useResizableSidebar(initialWidth: number, setSidebarOpen: React.
 
   useEffect(() => {
     if (!sidebarOpen) {
-      console.log('Sidebar closed');
       setPrevPosition(sidebarWidth);
       setSidebarWidth(initialWidth);
 
     } else {
-      console.log('Sidebar opened');
       setSidebarWidth(prevPosition || initialWidth);
     }
   }, [sidebarOpen, initialWidth]);

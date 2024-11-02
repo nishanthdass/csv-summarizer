@@ -13,10 +13,11 @@ html, body {
   padding: 20px;
   max-width: 100%;
   margin: 0 auto;
-  border: 1px solid #ccc;
+  border: 1px solid #000000;
   width: 100vw;
   height: 100vh;
   box-sizing: border-box;
+
 }
 
 .sidebar {
@@ -34,14 +35,36 @@ html, body {
   transform: translateX(calc(-100% + 30px));
 }
 
-.sidebar-content {
+.sidebar-tables {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
   justify-content: flex-start;
   overflow: auto;
   padding: 10px;
+  background-color: #535252;
 }
+
+.sidebar-graph {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  justify-content: flex-start;
+  overflow: auto;
+  padding: 10px;
+  background-color: #396ad291;
+}
+
+.sidebar-chat-bot {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  justify-content: flex-start;
+  overflow: auto;
+  padding: 10px;
+  background-color: rgba(141, 64, 209, 0.651);
+}
+
 
 .sidebar-options {
   width: 40px;
@@ -50,17 +73,105 @@ html, body {
   flex-direction: column;
   flex-shrink: 0;
   padding: 10px;
-  background-color: #f4f4f4;
+  padding-top: 0%;
+  padding-bottom: 0%;
+  border-top-right-radius: 15px; 
 }
 
-.sidebar-button {
-  margin-top: auto; 
+
+.sidebar-table-button {
+  width: 40px;
+  height: 80px; /* Ensure height matches width for perfect centering */
+  display: flex; /* Enable flexbox */
+  justify-content: center; /* Center horizontally */
+  align-items: center; /* Center vertically */
+  background-color: #535252;
+  border-bottom-right-radius: 15px;
+  border-top-right-radius: 15px; 
 }
 
-.sidebar-button img {
+.sidebar-table-button img {
   width: 32px;
   height: 32px;
   cursor: pointer;
+}
+
+.sidebar-graph-button {
+  width: 40px;
+  height: 80px; /* Ensure height matches width for perfect centering */
+  display: flex; /* Enable flexbox */
+  justify-content: center; /* Center horizontally */
+  align-items: center; /* Center vertically */
+  background-color: #396ad291;
+  border-bottom-right-radius: 15px;
+  border-top-right-radius: 15px; 
+}
+
+.sidebar-graph-button img {
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+
+.sidebar-chat-button {
+  width: 40px;
+  height: 80px; /* Ensure height matches width for perfect centering */
+  display: flex; /* Enable flexbox */
+  justify-content: center; /* Center horizontally */
+  align-items: center; /* Center vertically */
+  background-color: rgba(141, 64, 209, 0.651);
+  border-bottom-right-radius: 15px;
+  border-top-right-radius: 15px; 
+}
+
+.sidebar-chat-button img {
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+
+.sidebar-bottom-options {
+  margin-top: auto;
+  height: 50%;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end; /* Aligns content to the bottom */
+  padding-bottom: 10px; /* Adds a bit of padding at the bottom */
+  gap: 10px; /* Controls space between items */
+}
+
+.page-toggle-button,
+.sidebar-toggle-button {
+  margin: 0;
+  padding: 5px;
+}
+
+.page-toggle-button img,
+.sidebar-toggle-button img {
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+
+}
+
+.page-toggle-button.grayed-out{
+  filter: grayscale(100%);
+  opacity: 0.3;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+
+.sidebar-toggle-button {
+  filter: grayscale(100%);
+  opacity: 0.3;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.sidebar-toggle-button:hover {
+  opacity: 0.6;
+  filter: grayscale(0%);
 }
 
 .resizer {
@@ -83,7 +194,7 @@ html, body {
 input::file-selector-button  {
   font-weight: bold;
   background-color: #220f07;
-  color: #FFFFFF; /* White for high contrast */
+  color: #FFFFFF; /* White for high Scontrast */
   padding: 0.5em;
   border: thin solid grey;
   border-radius: 3px;
@@ -104,6 +215,7 @@ input::file-selector-button  {
   margin-bottom: 20px;
   border: 1px solid #ccc;
   padding: 20px;
+  background-color: #e4e4e4;
 }
 
 .upload-section h2 {
@@ -112,7 +224,7 @@ input::file-selector-button  {
 }
 
 .upload-section-input {
-  background-color: rgb(237, 229, 218);
+  background-color: rgb(216, 199, 174);
   display: flex;
 
   justify-content: space-between;
@@ -129,6 +241,7 @@ input::file-selector-button  {
   flex-grow: 1;
   overflow: hidden;
   min-height: 0;
+  background-color: #e4e4e4;
 }
 
 .load-csv-section h2 {
@@ -165,7 +278,7 @@ input::file-selector-button  {
   padding: 10px;
   margin: 5px 0;
   cursor: pointer;
-  background-color: #E84A5F;
+  background-color: #a74754;
   color: #FFFFFF; /* White for high contrast */
   font-weight: bold;
   border: 1px solid #ddd;
@@ -330,3 +443,23 @@ td,
   padding: 0 4px;  /* Minimal padding */
 }
 
+
+.selected-cell {
+  background-color: #F8B195; /* Individually selected cell */
+}
+
+.selected-row {
+  background-color: #a6a4a4; /* Fully selected row */
+}
+
+.row-number-cell {
+  background-color: #E0E0E0; /* Row number column */
+}
+
+.even-row {
+  background-color: #F5F5F5; /* Alternate row coloring */
+}
+
+.odd-row {
+  background-color: white;
+}

@@ -6,57 +6,107 @@ import Pagination from './component/pagination';
 import { useResizableSidebar } from './hooks/useResizableSidebar';
 import { useFetchTables } from './hooks//fetch_hooks/useFetchTables';
 import { useFetchTableData } from './hooks/fetch_hooks/useFetchTableData';
+import pageHomeToggleIcon from './assets/question.png';
+import pageBrowserToggleIcon from './assets/browser.png';
+import databaseTableIcon from './assets/folder.png';
+import chatBotIcon from './assets/chatbotA.png';
+import graphIcon from './assets/curve.png';
 import sidepanelIcon from './assets/hide.png';
 import { TableData } from './utilities/types';
-import { tab } from '@testing-library/user-event/dist/tab';
 
 function App() {
-  // handle sidebar and resizing
+  // Sidebar and resizing
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const { sidebarWidth, handleMouseDown } = useResizableSidebar(440, setSidebarOpen, sidebarOpen);
   const sidebarContentRef = useRef<HTMLDivElement | null>(null);
-  
+
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
   };
 
-  
-  // handle zoom
+  // Zoom state
   const [zoomLevel, setZoomLevel] = useState(1);
   const handleZoomIn = useCallback(() => setZoomLevel((prev) => Math.min(prev + 0.1, 2)), []);
   const handleZoomOut = useCallback(() => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5)), []);
   const handleResetZoom = useCallback(() => setZoomLevel(1), []);
 
-
-  // Fetch and set tables
+  // Table data fetching and visibility
   const { tables, refresh } = useFetchTables();
   const { tableData, fetchTableData } = useFetchTableData();
-  const [ table, setTable] = useState<string | null>(null);
+  const [table, setTable] = useState<string | null>(null);
+  const [showTable, setShowTable] = useState<boolean>(true);
 
   const loadTable = (tableName: string) => {
     setTable(null);
     handleResetZoom();
     setTable(tableName);
     fetchTableData(tableName);
+    setShowTable(true); // Show the table when loading a new one
   };
 
+  const toggleTableVisibility = () => {
+    setShowTable((prev) => !prev);
+  };
+
+  // Sidebar content selection
+  const [selectedSidebarContent, setSelectedSidebarContent] = useState<string>('table');
 
   return (
     <div className="App">
       <div className={`sidebar ${sidebarOpen ? '' : 'sidebar-closed'}`} style={{ width: `${sidebarWidth}px` }}>
-        <div className="sidebar-content" ref={sidebarContentRef}>
-          <UploadWindow onSuccessfulUpload={refresh} />
-          <SelectWindow tables={tables} onTableSelect={loadTable} />
-        </div>
+        {/* Conditional rendering for sidebar content based on selectedSidebarContent */}
+        {selectedSidebarContent === 'table' && (
+          <div className="sidebar-tables" ref={sidebarContentRef}>
+            <UploadWindow onSuccessfulUpload={refresh} />
+            <SelectWindow tables={tables} onTableSelect={loadTable} />
+          </div>
+        )}
+        {selectedSidebarContent === 'graph' && (
+          <div className="sidebar-graph" ref={sidebarContentRef}>
+            <h2>Graph</h2>
+            <p>Graph is currently disabled.</p>
+          </div>
+        )}
+        {selectedSidebarContent === 'chatBot' && (
+          <div className="sidebar-chat-bot" ref={sidebarContentRef}>
+            <h2>Chat Bot</h2>
+            <p>Chatbot is currently disabled.</p>
+          </div>
+        )}
+
         <div className="sidebar-options">
-          <div className="sidebar-button" onClick={toggleSidebar}>
-            <img src={sidepanelIcon} alt="Toggle Sidebar" style={{ transform: sidebarOpen ? 'scaleX(1)' : 'scaleX(-1)' }} />
+          {/* Each button sets the selectedSidebarContent to display the respective content */}
+          <div className="sidebar-table-button" onClick={() => selectedSidebarContent === 'table' ? toggleSidebar() : setSelectedSidebarContent('table')}>
+            <img src={databaseTableIcon} alt="Table Options" />
+          </div>
+          <div className="sidebar-graph-button" onClick={() => selectedSidebarContent === 'graph' ? toggleSidebar() : setSelectedSidebarContent('graph')}>
+            <img src={graphIcon} alt="Graph Options" />
+          </div>
+          <div className="sidebar-chat-button" onClick={() => selectedSidebarContent === 'chatBot' ? toggleSidebar() : setSelectedSidebarContent('chatBot')}>
+            <img src={chatBotIcon} alt="Chat Bot Options" />
+          </div>
+          <div className="sidebar-bottom-options">
+            {table && (
+              <div className="page-toggle-button" onClick={toggleTableVisibility}>
+                {showTable ? <img src={pageHomeToggleIcon} alt="Toggle page" /> 
+                : 
+                <img src={pageBrowserToggleIcon} alt="Toggle page" />}
+              </div>
+            )}
+            {!table && (
+              <div className="page-toggle-button grayed-out">
+                <img src={pageHomeToggleIcon} alt="Toggle page"/>
+              </div>
+            )}
+            <div className='sidebar-toggle-button' onClick={toggleSidebar}>
+              <img src={sidepanelIcon} alt="Toggle Sidebar" style={{ transform: sidebarOpen ? 'scaleX(1)' : 'scaleX(-1)' }} />
+            </div>
           </div>
         </div>
         <div className={`resizer${sidebarOpen ? '' : ' resizer-closed'}`} {...(sidebarOpen ? { onMouseDown: handleMouseDown } : {})}></div>
       </div>
-      <div className="main-content" style={{ marginLeft: sidebarOpen ? '0px' : `calc(-${sidebarWidth}px + 20px)` }}>
-        {table && tableData && (
+      <div className="main-content" style={{ marginLeft: sidebarOpen ? '0px' : `calc(-${sidebarWidth}px + 30px)` }}>
+        {table && showTable && tableData && (
           <TenstackTable
             tableName={table}
             table={tableData}
@@ -64,7 +114,7 @@ function App() {
             zoomLevel={zoomLevel}
           />
         )}
-        {table && (
+        {table && showTable && (
           <Pagination
             currentPage={tableData?.page || 1}
             pageSize={tableData?.page_size || 10}

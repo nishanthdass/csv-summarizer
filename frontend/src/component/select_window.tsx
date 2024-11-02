@@ -10,7 +10,6 @@ const SelectWindow: React.FC<SelectWindowProps> = ({ tables, onTableSelect }) =>
 
   useEffect(() => {
     if (table) {
-      console.log('Selected table in SelectWindow:', table);
       onTableSelect(table);  // Pass the selected file to the parent component
     }
   }, [table]);

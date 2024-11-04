@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from qa_with_postgres.routes import router as api_router
+from qa_with_postgres.db_routes import router
 
 
 app = FastAPI()
@@ -18,4 +18,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router)
+app.include_router(router)

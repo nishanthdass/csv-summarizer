@@ -1,15 +1,18 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile
+from fastapi import APIRouter, HTTPException, File, UploadFile, Request
 import shutil
 import psycopg2
 import pandas as pd
 import re
 from qa_with_postgres.db_connect import get_db_connection, close_db_connection
-from qa_with_postgres.config import UPLOAD_DIR
+from qa_with_postgres.file_config import UPLOAD_DIR
 from qa_with_postgres.models import TableNameRequest
 from qa_with_postgres.db_utility import ingest_file, sanitize_column_name, convert_postgres_to_react
+from qa_with_postgres.chatbot import ChatBot
 
 # Create a router object
 router = APIRouter()
+
+chatbot_instance = ChatBot()
 
 
 @router.post("/upload", status_code=200)
@@ -112,3 +115,15 @@ async def get_table(request: TableNameRequest):
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
+
+@router.post("/chat")
+async def chat(request: Request):
+    data = await request.json()
+    message = data.get('message')
+
+    # Assuming you're not maintaining conversation history per session
+    conversation = []
+    _, updated_conversation = chatbot_instance.respond(conversation, message)
+    response = updated_conversation[-1][1]
+
+    return {"response": response}

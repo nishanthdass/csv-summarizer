@@ -48,8 +48,7 @@ const UploadWindow: React.FC<UploadWindowProps> = ({ onSuccessfulUpload }) => {
   };
 
   return (
-    <div className="upload-section">
-      <h2>Upload CSV File</h2>
+    <div>
       <div className="upload-section-input">
         <input
           type="file"

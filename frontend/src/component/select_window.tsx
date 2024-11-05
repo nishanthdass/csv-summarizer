@@ -15,8 +15,6 @@ const SelectWindow: React.FC<SelectWindowProps> = ({ tables, onTableSelect }) =>
   }, [table]);
 
   return (
-    <div className="load-csv-section">
-      <h2>Select CSV File</h2>
       <div className="file-list-container">
         {tables.length > 0 ? (
           <ul className="file-list">
@@ -32,7 +30,6 @@ const SelectWindow: React.FC<SelectWindowProps> = ({ tables, onTableSelect }) =>
           <p>No tables found</p>
         )}
       </div>
-    </div>
   );
 };
 

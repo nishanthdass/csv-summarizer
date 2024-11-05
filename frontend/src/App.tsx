@@ -3,6 +3,8 @@ import UploadWindow from './component/upload_window';
 import SelectWindow from './component/select_window';
 import TenstackTable from './component/tanstack_table';
 import Pagination from './component/pagination';
+import Chatbot from './component/chatbot';
+import AboutProject from './component/about_project';
 import { useResizableSidebar } from './hooks/useResizableSidebar';
 import { useFetchTables } from './hooks//fetch_hooks/useFetchTables';
 import { useFetchTableData } from './hooks/fetch_hooks/useFetchTableData';
@@ -12,7 +14,11 @@ import databaseTableIcon from './assets/folder.png';
 import chatBotIcon from './assets/chatbotA.png';
 import graphIcon from './assets/curve.png';
 import sidepanelIcon from './assets/hide.png';
+
+
+
 import { TableData } from './utilities/types';
+import { tab } from '@testing-library/user-event/dist/tab';
 
 function App() {
   // Sidebar and resizing
@@ -34,7 +40,7 @@ function App() {
   const { tables, refresh } = useFetchTables();
   const { tableData, fetchTableData } = useFetchTableData();
   const [table, setTable] = useState<string | null>(null);
-  const [showTable, setShowTable] = useState<boolean>(true);
+  const [showTable, setShowTable] = useState<boolean>(false);
 
   const loadTable = (tableName: string) => {
     setTable(null);
@@ -45,6 +51,7 @@ function App() {
   };
 
   const toggleTableVisibility = () => {
+    console.log(showTable);
     setShowTable((prev) => !prev);
   };
 
@@ -57,8 +64,14 @@ function App() {
         {/* Conditional rendering for sidebar content based on selectedSidebarContent */}
         {selectedSidebarContent === 'table' && (
           <div className="sidebar-tables" ref={sidebarContentRef}>
-            <UploadWindow onSuccessfulUpload={refresh} />
-            <SelectWindow tables={tables} onTableSelect={loadTable} />
+            <div className="upload-section">
+              <h2>Upload CSV File</h2>
+              <UploadWindow onSuccessfulUpload={refresh} />
+            </div>
+            <div className="load-csv-section">
+              <h2>Select CSV File</h2>
+              <SelectWindow tables={tables} onTableSelect={loadTable} />
+            </div>
           </div>
         )}
         {selectedSidebarContent === 'graph' && (
@@ -69,11 +82,18 @@ function App() {
         )}
         {selectedSidebarContent === 'chatBot' && (
           <div className="sidebar-chat-bot" ref={sidebarContentRef}>
-            <h2>Chat Bot</h2>
-            <p>Chatbot is currently disabled.</p>
+            <div className="chat-messages">
+              <h2>Chatbot</h2>
+              { table ? 
+                <Chatbot table={table} /> : 
+                <>
+                <h4>Please select a table to start interacting with the chatbot</h4>
+                <SelectWindow tables={tables} onTableSelect={loadTable} />
+                </>
+              }
+            </div>
           </div>
         )}
-
         <div className="sidebar-options">
           {/* Each button sets the selectedSidebarContent to display the respective content */}
           <div className="sidebar-table-button" onClick={() => selectedSidebarContent === 'table' ? toggleSidebar() : setSelectedSidebarContent('table')}>
@@ -126,6 +146,7 @@ function App() {
             onResetZoom={handleResetZoom}
           />
         )}
+        {!showTable && <AboutProject />}
       </div>
     </div>
   );

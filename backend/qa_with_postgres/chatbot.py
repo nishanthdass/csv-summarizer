@@ -43,11 +43,12 @@ class ChatBot:
         Args:
             chatbot (List): A list representing the chatbot's conversation history.
             message (str): The user's input message to the chatbot.
-
+            
         Returns:
             Tuple[str, List]: An empty string (placeholder) and the updated chatbot conversation list.
         """
         # Invoke the chain with the current message
-        response = self.chain.invoke({"question": message})
+        print(message)
+        response = self.chain.invoke({"question": message["question"], "table": message["table"]})
         chatbot.append((message, response))
         return "", chatbot

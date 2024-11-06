@@ -22,7 +22,7 @@ async def upload_file(file: UploadFile = File(...)):
     # Save the uploaded file
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-
+ 
     table_name = re.sub(r'\.csv$', '', file.filename)
 
     try:

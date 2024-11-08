@@ -46,5 +46,9 @@
   "devDependencies": {
     "@types/lodash": "^4.17.12",
     "@types/react-transition-group": "^4.4.11"
-  }
+  },
+  "description": "This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).",
+  "main": "index.js",
+  "author": "",
+  "license": "ISC"
 }

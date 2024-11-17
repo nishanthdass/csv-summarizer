@@ -3,6 +3,7 @@ from qa_with_postgres.db_utility import get_summary_data
 from database_crew.src.database_crew.crews.database_crew.table_sumarizer_crew import TableSummarizerCrew
 from database_crew.src.database_crew.table_sumarizer_crew_flow import TableSummarizerCrewFlow
 from pprint import pprint
+import logging
 import asyncio
 import json
 
@@ -28,18 +29,23 @@ class Workplace:
         self.crew_flows = {}
         self.crew_flow = crew_flow
 
+    logging.basicConfig(level=logging.DEBUG)
+
     async def load_summary_data(self, table_name):
+        # Log loading start
+        logging.debug(f"Loading summary data for {table_name}")
+        
         # Load summary data for the specified table
         self.summary_data = get_summary_data(table_name=table_name + "_summary")
         
         is_summarized = self.summary_data.get('isSummarized', False)
         
         if not is_summarized:
-            print("Summary data not available for", table_name)
-            json_object = self.summary_data.get('repacked_rows', {})
-            table_name = table_name + "_summary"
+            logging.debug(f"Summary data not available for {table_name}")
+            key_to_list_json = self.summary_data.get('repacked_rows', {})
+            index_to_row_json = self.summary_data.get('row_numbered_json', {})
             crew = TableSummarizerCrew(table_name=table_name)
-            flow = TableSummarizerCrewFlow(crew, table_name, json_object)
+            flow = TableSummarizerCrewFlow(crew, table_name, key_to_list_json, index_to_row_json)
             
             crew_flow = CrewFlow(
                 name="SummarizerCrewFlow",
@@ -50,8 +56,8 @@ class Workplace:
             )
             self.add_crew_flow(crew_flow)
 
-            # print("Starting TableSummarizerCrewFlow...")
-            # Kick off the summarization flow asynchronously
+            # Add a log to monitor if embeddings are being created here
+            logging.debug(f"Starting summarization for {table_name} with SummarizerCrewFlow")
             await self.get_crew_flow("SummarizerCrewFlow").flow.tableSummarizerkickoff()
 
         # Explicitly return a success message or the summary data for debugging purposes

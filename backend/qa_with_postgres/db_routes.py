@@ -46,6 +46,7 @@ async def upload_file(file: UploadFile = File(...), background_tasks: Background
 @router.get("/get-tables", status_code=200)
 async def get_files():
     try:
+        print("Fetching tables...")
         conn = get_db_connection()
         cur = conn.cursor()
 
@@ -58,6 +59,8 @@ async def get_files():
             AND d.description = 'frontend table';
         """)
         files = [row[0] for row in cur.fetchall()]
+
+        print("Tables fetched successfully.")
 
         cur.close()
         conn.close()

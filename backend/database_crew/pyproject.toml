@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-kickoff = "database_crew.table_sumarizer_crew_flow:tableSummarizerkickoff"
+kickoff = "database_crew.kickoff:tableSummarizerkickoff"
 
 [build-system]
 requires = ["hatchling"]

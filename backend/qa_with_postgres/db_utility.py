@@ -2,7 +2,7 @@ from fastapi import HTTPException
 import pandas as pd
 import re
 from qa_with_postgres.db_connect import get_db_connection, close_db_connection
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_experimental.text_splitter import SemanticChunker
 from langchain_openai import OpenAIEmbeddings
 from qa_with_postgres.db_connect import get_db_connection
 import torch
@@ -43,7 +43,7 @@ async def poll_completion_and_load_data(table_name, workplace):
 def setup_table_and_fetch_columns(conn, table_name):
     """Check if a table exists, setup necessary configurations, and fetch column names."""
     cur = conn.cursor()
-    setup_pgvector_and_table(conn)
+    # setup_pgvector_and_table(conn)
 
     # Verify if the table exists
     cur.execute(f"SELECT to_regclass('{table_name}')")
@@ -67,58 +67,59 @@ def fetch_and_process_rows_with_embeddings(table_name):
 
     # Initialize repacked_rows as a dictionary where each key is a column name and values are lists of each row's items
     repacked_rows = {column: [] for column in columns}
+    row_numbered_json = {}  # New dictionary to hold rows indexed by row number
 
     # Define sample size
     cur.execute(f"SELECT COUNT(*) AS total_rows FROM {table_name};")
     total_rows = cur.fetchone()[0]
     sample_size = min(int(total_rows * 0.05), 20000) if total_rows >= 100 else total_rows
 
-    # Fetch rows and map them to column names
-    cur.execute(f"SELECT * FROM {table_name} ORDER BY random() LIMIT {sample_size};")
+    # Fetch rows with row index included
+    cur.execute(f"""
+        SELECT ROW_NUMBER() OVER() AS row_index, * 
+        FROM {table_name} 
+        ORDER BY random() 
+        LIMIT {sample_size};
+    """)
     rows = cur.fetchall()
+    columns = ["row_index"] + [desc[0] for desc in cur.description[1:]]  # Include row_index in columns list
 
     for row in rows:
         row_data = {columns[i]: row[i] for i in range(len(columns))}
         
         for key, value in row_data.items():
             if isinstance(value, str) and not url_pattern.match(value) and len(value) > 100:
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20, length_function=len)
-                chunks = text_splitter.split_text(value)
-                embedding_ids = []
-                
-                for chunk_index, chunk in enumerate(chunks):
-                    embedding_id = f"VECTOR_{table_name}_{random.randint(100000, 999999)}_{chunk_index}"
-                    try:
-                        text_embeddings = model.encode_text(chunk)
-                        if isinstance(text_embeddings, torch.Tensor):
-                            text_embeddings = text_embeddings.cpu().numpy()
-                        
-                        print(f"Embedding {embedding_id} for {key}: {text_embeddings}")
-                        cur.execute(
-                            "INSERT INTO embeddings (reference_id, column_name, embedding) VALUES (%s, %s, %s);",
-                            (embedding_id, key, text_embeddings)
-                        )
+                chunks = []
+                semantic_chunker = SemanticChunker(OpenAIEmbeddings(), breakpoint_threshold_type="percentile")
+                semantic_chunks = semantic_chunker.create_documents([value])
 
-                    except Exception as e:
-                        print("Error encoding text:", e)
-                    embedding_ids.append(embedding_id)
-                
-                # Update the value with embedding information
-                row_data[key] = {"embedding_ids": embedding_ids, "is_embedding": True}
+                for chunk in semantic_chunks:
+                    json_serializable_data = chunk.dict()
+                    if "page_content" in json_serializable_data:
+                        json_serializable_data = json_serializable_data["page_content"]
+                        json_data = json.dumps(json_serializable_data)
+                        chunks.append(json_data)
+
+                row_data[key] = chunks
             else:
                 row_data[key] = value  # No embedding; just add the value as is
 
             # Append the processed row value to the corresponding column list in repacked_rows
-            repacked_rows[key].append(row_data[key])
+            if key != "row_index":  # Exclude row_index from repacked columns
+                repacked_rows[key].append(row_data[key])
 
-    # Pass the repacked_rows dictionary to create_summary_table
-    print("Repacked rows:", repacked_rows)
-    create_summary_table(conn, table_name, columns, repacked_rows)
+        # Use row_index as key for row_numbered_json
+        row_numbered_json[row_data["row_index"]] = row_data
+
+    # Pass repacked_rows and row_numbered_json to create_summary_table
+    create_summary_table(conn, table_name, columns, repacked_rows, row_numbered_json)
 
     task_completion_status[table_name] = True
 
     cur.close()
     conn.close()
+
+
 
 def get_summary_data(table_name):
     conn = get_db_connection()
@@ -143,7 +144,7 @@ def get_summary_data(table_name):
     return data
 
 
-def create_summary_table(conn, table_name, columns, repacked_rows):
+def create_summary_table(conn, table_name, columns, repacked_rows, row_numbered_json):
     """Create a summary table with columns for repacked_rows and summaries for each column."""
     summary_table_name = f"{table_name}_summary"
     cur = conn.cursor()
@@ -155,6 +156,7 @@ def create_summary_table(conn, table_name, columns, repacked_rows):
         CREATE TABLE {summary_table_name} (
             id SERIAL PRIMARY KEY,
             repacked_rows JSONB,          -- Store repacked rows as JSONB
+            row_numbered_json JSONB,      -- Store row_numbered_json as JSONB
             table_summary TEXT DEFAULT '', -- Column for overall table summary
             isSummarized BOOLEAN DEFAULT FALSE,  -- New boolean column indicating if the table is summarized
             {', '.join([f"{col}_summary JSONB DEFAULT '{{\"classifications\": [], \"summary\": \"\"}}'" for col in columns])}  -- Initialize each summary column as JSONB
@@ -168,6 +170,11 @@ def create_summary_table(conn, table_name, columns, repacked_rows):
     cur.execute(
         f"INSERT INTO {summary_table_name} (repacked_rows) VALUES (%s);",
         (json.dumps(repacked_rows),)  # Convert repacked_rows to JSON format for insertion
+    )
+    conn.commit()
+    cur.execute(
+        f"INSERT INTO {summary_table_name} (row_numbered_json) VALUES (%s);",
+        (json.dumps(row_numbered_json),)  # Convert repacked_rows to JSON format for insertion
     )
     conn.commit()
     print(f"Summary table '{summary_table_name}' created with initial data.")

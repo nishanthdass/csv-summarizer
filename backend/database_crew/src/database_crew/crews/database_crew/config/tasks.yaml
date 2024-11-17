@@ -1,14 +1,20 @@
-summarize_json:
+summarize_unordered_json:
   description: >
-    "Summarize each key of {json_object} by using JSONSearchTool. Use the {json_object} as an input to the JSONSearchTool. Return a summary for each key."
+    Summarize each key in {key_to_list_json} using JSONSearchTool, focusing on each key independently.
+    Each key represents a table column in {table_name}. The order of values within arrays in {key_to_list_json} is not important.
   expected_output: >
-    "A summary of each key."
+    A JSON object containing a summary for each key. No need to form detailed insights.
+    Example structure(replace with actual output): { "key1": {"summary": "summary1", insights: "insights1"}, "key2": {"summary": "summary2", insights: "insights2"}, ... }
   agent: json_summarizer
 
 
-summarize_database:
+summarize_ordered_json:
   description: >
-    "Summarize each key of the json object in the repacked_rows column of {table_name} by using database_summarizer. Return a summary for each key."
+    Enhance the summaries from {summarize_unordered_json} by using JSONSearchTool with {index_to_row_json} as input.
+    Each key in {index_to_row_json} represents a row in {table_name}, with sub-keys representing column names and their respective values.
+    In addition to summarizing, the agent should analyze relationships between columns, identifying patterns, dependencies, or correlations where possible. 
+    Summaries can be detailed to capture insights about these relationships.
   expected_output: >
-    "A summary of each key."
-  agent: database_summarizer
+    A JSON object containing an enhanced and detailed summary for each key, with insights on column relationships where applicable.
+    Example structure(replace with actual output):  { "key1": {"summary": "enhanced summary 1", insights: "insights1"}, "key2": {"summary": "enhanced summary 2", insights: "insights2"}, ... }
+  agent: json_summarizer

@@ -1,0 +1,16 @@
+[project]
+name = "database_crew"
+version = "0.1.0"
+description = "database_crew using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<=3.13"
+dependencies = [
+    "crewai[tools]>=0.76.9,<1.0.0",
+]
+
+[project.scripts]
+kickoff = "database_crew.table_sumarizer_crew_flow:tableSummarizerkickoff"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

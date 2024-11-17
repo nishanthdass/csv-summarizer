@@ -1,0 +1,67 @@
+{
+  "agents": [
+    {
+      "name": "query_generation_agent",
+      "role": "SQL Query Generator and Executor",
+      "task": "Generates and executes an SQL query based on the task plan provided by task_coordinator.",
+      "capabilities": [
+        "Generate SQL queries",
+        "Execute SQL queries"
+      ],
+      "expected_inputs": [
+        "user_question",
+        "task_plan"
+      ],
+      "expected_output": "raw_data",
+      "dependencies": []
+    },
+    {
+      "name": "analytics_agent",
+      "role": "Data Analyst",
+      "task": "Analyzes the retrieved data to provide insights into trends, pricing, and predictions as requested by the user.",
+      "capabilities": [
+        "Data analysis",
+        "Trend identification",
+        "Pricing predictions"
+      ],
+      "expected_inputs": [
+        "raw_data",
+        "task_instructions"
+      ],
+      "expected_output": "analysis_results",
+      "dependencies": ["query_generation_agent"]
+    },
+    {
+      "name": "summarization_agent",
+      "role": "Data Summarizer",
+      "task": "Summarizes the analyzed data, providing concise insights that are relevant to the user's question and suitable for display in tooltips or side panels.",
+      "capabilities": [
+        "Data summarization",
+        "Insight distillation"
+      ],
+      "expected_inputs": [
+        "user_question",
+        "raw_data",
+        "analysis_results",
+        "task_plan"
+      ],
+      "expected_output": "summary",
+      "dependencies": []
+    },
+    {
+      "name": "answer_evaluation_agent",
+      "role": "Answer Evaluator",
+      "task": "Evaluates the final response to ensure it accurately and thoroughly answers the user's question. Suggests alternative approaches if the response lacks accuracy or completeness.",
+      "capabilities": [
+        "Response evaluation",
+        "Quality assurance"
+      ],
+      "expected_inputs": [
+        "summary",
+        "task_plan"
+      ],
+      "expected_output": "evaluation_feedback",
+      "dependencies": ["summarization_agent"]
+    }
+  ]
+}

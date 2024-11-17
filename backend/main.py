@@ -1,8 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from qa_with_postgres.db_routes import router
-
+from database_crew.src.database_crew.workplace import Workplace
 
 app = FastAPI()
 
@@ -18,4 +18,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.state.workplace = Workplace()
+
+
 app.include_router(router)
+
+@app.get("/test-workplace")
+async def test_workplace():
+    workplace = Workplace()
+    table_name = "housing"  # Example table name
+    try:
+        result = await workplace.load_summary_data(table_name)  # Capture the returned result
+        return result
+    except Exception as e:
+        return {"detail": f"An error occurred while fetching summary data: {str(e)}"}

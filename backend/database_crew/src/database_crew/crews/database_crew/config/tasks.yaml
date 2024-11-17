@@ -1,0 +1,14 @@
+summarize_json:
+  description: >
+    "Summarize each key of {json_object} by using JSONSearchTool. Use the {json_object} as an input to the JSONSearchTool. Return a summary for each key."
+  expected_output: >
+    "A summary of each key."
+  agent: json_summarizer
+
+
+summarize_database:
+  description: >
+    "Summarize each key of the json object in the repacked_rows column of {table_name} by using database_summarizer. Return a summary for each key."
+  expected_output: >
+    "A summary of each key."
+  agent: database_summarizer

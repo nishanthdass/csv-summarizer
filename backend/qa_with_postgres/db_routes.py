@@ -1,39 +1,46 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile, Request
+from fastapi import APIRouter, HTTPException, File, UploadFile, Request, BackgroundTasks
 import shutil
 import psycopg2
 import pandas as pd
 import re
-from qa_with_postgres.db_connect import get_db_connection, close_db_connection
+from qa_with_postgres.db_connect import get_db_connection
 from qa_with_postgres.file_config import UPLOAD_DIR
 from qa_with_postgres.models import TableNameRequest
-from qa_with_postgres.db_utility import ingest_file, sanitize_column_name, convert_postgres_to_react
+from qa_with_postgres.db_utility import ingest_file, poll_completion_and_load_data, fetch_and_process_rows_with_embeddings, get_table_data
 from qa_with_postgres.chatbot import ChatBot
+
+
 
 # Create a router object
 router = APIRouter()
 
-chatbot_instance = ChatBot()
-
-
+# Main code in endpoint
 @router.post("/upload", status_code=200)
-async def upload_file(file: UploadFile = File(...)):
-    file_location = f"{UPLOAD_DIR}/{file.filename}"
+async def upload_file(file: UploadFile = File(...), background_tasks: BackgroundTasks = BackgroundTasks(), request: Request = None):
     
-    # Save the uploaded file
+    file_location = f"{UPLOAD_DIR}/{file.filename}"
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
- 
+
     table_name = re.sub(r'\.csv$', '', file.filename)
 
     try:
+        # Ingest the entire file into the database for retrival
         ingest_file(file_location, table_name)
-    except Exception as e:
-        # Return a 500 error if ingestion fails
-        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
-    
-    # Success response
-    return {"info": f"file '{file.filename}' saved at '{file_location}'"}
 
+        # After adding csv to db, fetch_and_process_rows_with_embeddings will provide random datasample for agents to summarize table
+        background_tasks.add_task(fetch_and_process_rows_with_embeddings, table_name)
+
+        workplace = request.app.state.workplace
+
+        #  poll_completion_and_load_data will intialize the summarization crew in the CrewAI workplace
+        background_tasks.add_task(poll_completion_and_load_data, table_name, workplace)
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+
+    return {"info": f"file '{file.filename}' saved at '{file_location}'"}
 
 
 @router.get("/get-tables", status_code=200)
@@ -42,7 +49,14 @@ async def get_files():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+        cur.execute("""
+            SELECT c.relname AS table_name
+            FROM pg_class c
+            JOIN pg_description d ON c.oid = d.objoid
+            WHERE c.relkind = 'r'  -- 'r' stands for ordinary table
+            AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+            AND d.description = 'frontend table';
+        """)
         files = [row[0] for row in cur.fetchall()]
 
         cur.close()
@@ -63,51 +77,10 @@ async def get_table(request: TableNameRequest):
     table_name = request.table_name
     page = request.page
     page_size = request.page_size
-    print(table_name, page, page_size)
     
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute(f"SELECT to_regclass('{table_name}')")
-        table_exists = cur.fetchone()[0]
-        if not table_exists:
-            raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
-
-        cur.execute(f"SELECT COUNT(*) FROM {table_name}")
-        total_rows = cur.fetchone()[0]
-
-        offset = (page - 1) * page_size
-
-        cur.execute(f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}")
-        rows = cur.fetchall()
-
-        # Get the column names from the cursor description (ensures correct order)
-        columns = [desc[0] for desc in cur.description]
-
-        # Convert column types to React-compatible types (e.g., from information_schema if needed)
-        cur.execute(f"""
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = '{table_name}';
-        """)
-        columns_and_types = cur.fetchall()
-        columns_and_types = convert_postgres_to_react(columns_and_types)
-
-        cur.close()
-        conn.close()
-
-        # Build the table object
-        table_data = {
-            "header": {col_name: col_type for col_name, col_type in columns_and_types},  # Create header as a key-value map
-            "rows": [dict(zip(columns, row)) for row in rows],  # Use correct column ordering from cur.description
-            "page": page,
-            "page_size": page_size,
-            "total_rows": total_rows,
-            "total_pages": (total_rows + page_size - 1) // page_size
-        }
-
-        return table_data  # Return table object with columns and rows
+        table_data = get_table_data(table_name, page, page_size)
+        return table_data
     except psycopg2.DatabaseError as e:
         print(f"Database error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error while fetching table data.")
@@ -120,10 +93,15 @@ async def get_table(request: TableNameRequest):
 async def chat(request: Request):
     data = await request.json()
     message = data.get('message')
+    question = message.get('question')
+    table_name = message.get('table')
 
-    # Assuming you're not maintaining conversation history per session
-    conversation = []
-    _, updated_conversation = chatbot_instance.respond(conversation, message)
-    response = updated_conversation[-1][1]
+    # await kickoff(question, table_name)
 
-    return {"response": response}
+    # # Assuming you're not maintaining conversation history per session
+    # conversation = []
+    # _, updated_conversation = chatbot_instance.respond(conversation, message)
+    # response = updated_conversation[-1][1]
+    # response = "hello"
+
+    return {"response": "response"}

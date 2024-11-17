@@ -1,6 +1,265 @@
+from fastapi import HTTPException
 import pandas as pd
 import re
 from qa_with_postgres.db_connect import get_db_connection, close_db_connection
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from qa_with_postgres.db_connect import get_db_connection
+import torch
+import random
+import json
+from transformers import AutoModel
+from psycopg2.extensions import register_adapter, AsIs
+import numpy as np
+import asyncio
+
+task_completion_status = {}
+
+
+def adapt_numpy_array(numpy_array):
+    return AsIs("'[" + ",".join(map(str, numpy_array)) + "]'")
+
+register_adapter(np.ndarray, adapt_numpy_array)
+
+# chatbot_instance = ChatBot()
+url_pattern = re.compile(
+    r'^(https?://|www\.)'                  # Starts with 'http://', 'https://', or 'www.'
+)
+
+def initialize_model(model_name='jinaai/jina-clip-v1'):
+    """Initialize the model on GPU."""
+    return AutoModel.from_pretrained(model_name, trust_remote_code=True).to('cuda')
+
+
+async def poll_completion_and_load_data(table_name, workplace):
+    # Polling loop to check completion
+    while not task_completion_status.get(table_name, False):
+        print("Polling for completion...")
+        await asyncio.sleep(1)  # Check every second
+
+    # Task complete, call `load_summary_data`
+    await workplace.load_summary_data(table_name)
+
+def setup_table_and_fetch_columns(conn, table_name):
+    """Check if a table exists, setup necessary configurations, and fetch column names."""
+    cur = conn.cursor()
+    setup_pgvector_and_table(conn)
+
+    # Verify if the table exists
+    cur.execute(f"SELECT to_regclass('{table_name}')")
+    table_exists = cur.fetchone()[0]
+    if not table_exists:
+        raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
+
+    # Fetch column names
+    cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name.lower()}'")
+    columns = [row[0] for row in cur.fetchall()]
+
+    return cur, columns
+
+
+def fetch_and_process_rows_with_embeddings(table_name):
+    """Fetch rows, process text into embeddings, and insert into the embeddings table."""
+    model = initialize_model()
+    conn = get_db_connection()
+    cur, columns = setup_table_and_fetch_columns(conn, table_name)
+    url_pattern = re.compile(r'^(https?://|www\.)')
+
+    # Initialize repacked_rows as a dictionary where each key is a column name and values are lists of each row's items
+    repacked_rows = {column: [] for column in columns}
+
+    # Define sample size
+    cur.execute(f"SELECT COUNT(*) AS total_rows FROM {table_name};")
+    total_rows = cur.fetchone()[0]
+    sample_size = min(int(total_rows * 0.05), 20000) if total_rows >= 100 else total_rows
+
+    # Fetch rows and map them to column names
+    cur.execute(f"SELECT * FROM {table_name} ORDER BY random() LIMIT {sample_size};")
+    rows = cur.fetchall()
+
+    for row in rows:
+        row_data = {columns[i]: row[i] for i in range(len(columns))}
+        
+        for key, value in row_data.items():
+            if isinstance(value, str) and not url_pattern.match(value) and len(value) > 100:
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20, length_function=len)
+                chunks = text_splitter.split_text(value)
+                embedding_ids = []
+                
+                for chunk_index, chunk in enumerate(chunks):
+                    embedding_id = f"VECTOR_{table_name}_{random.randint(100000, 999999)}_{chunk_index}"
+                    try:
+                        text_embeddings = model.encode_text(chunk)
+                        if isinstance(text_embeddings, torch.Tensor):
+                            text_embeddings = text_embeddings.cpu().numpy()
+                        
+                        print(f"Embedding {embedding_id} for {key}: {text_embeddings}")
+                        cur.execute(
+                            "INSERT INTO embeddings (reference_id, column_name, embedding) VALUES (%s, %s, %s);",
+                            (embedding_id, key, text_embeddings)
+                        )
+
+                    except Exception as e:
+                        print("Error encoding text:", e)
+                    embedding_ids.append(embedding_id)
+                
+                # Update the value with embedding information
+                row_data[key] = {"embedding_ids": embedding_ids, "is_embedding": True}
+            else:
+                row_data[key] = value  # No embedding; just add the value as is
+
+            # Append the processed row value to the corresponding column list in repacked_rows
+            repacked_rows[key].append(row_data[key])
+
+    # Pass the repacked_rows dictionary to create_summary_table
+    print("Repacked rows:", repacked_rows)
+    create_summary_table(conn, table_name, columns, repacked_rows)
+
+    task_completion_status[table_name] = True
+
+    cur.close()
+    conn.close()
+
+def get_summary_data(table_name):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"SELECT to_regclass('{table_name}')")
+    table_exists = cur.fetchone()[0]
+    if not table_exists:
+        raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
+    
+    cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name.lower()}'")
+    columns = [row[0] for row in cur.fetchall()]
+    
+    cur.execute(f"SELECT * FROM {table_name}")
+    rows = cur.fetchall()
+    data = {column: None for column in columns}
+
+    for row in rows:
+        for i, column in enumerate(columns):
+            data[column] = row[i]
+    cur.close()
+    conn.close()
+    return data
+
+
+def create_summary_table(conn, table_name, columns, repacked_rows):
+    """Create a summary table with columns for repacked_rows and summaries for each column."""
+    summary_table_name = f"{table_name}_summary"
+    cur = conn.cursor()
+
+    # Drop the summary table if it already exists
+    cur.execute(f"DROP TABLE IF EXISTS {summary_table_name};")
+
+    cur.execute(f"""
+        CREATE TABLE {summary_table_name} (
+            id SERIAL PRIMARY KEY,
+            repacked_rows JSONB,          -- Store repacked rows as JSONB
+            table_summary TEXT DEFAULT '', -- Column for overall table summary
+            isSummarized BOOLEAN DEFAULT FALSE,  -- New boolean column indicating if the table is summarized
+            {', '.join([f"{col}_summary JSONB DEFAULT '{{\"classifications\": [], \"summary\": \"\"}}'" for col in columns])}  -- Initialize each summary column as JSONB
+        );
+    """)
+
+
+    conn.commit()
+
+    # Insert repacked_rows with empty summaries for each column
+    cur.execute(
+        f"INSERT INTO {summary_table_name} (repacked_rows) VALUES (%s);",
+        (json.dumps(repacked_rows),)  # Convert repacked_rows to JSON format for insertion
+    )
+    conn.commit()
+    print(f"Summary table '{summary_table_name}' created with initial data.")
+    cur.execute(f"COMMENT ON TABLE {summary_table_name} IS 'agent table';")
+    conn.commit()
+    cur.close()
+
+
+def setup_pgvector_and_table(conn):
+    try:
+        cur = conn.cursor()
+        
+        # Check and create the pgvector extension if it doesn't exist
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        conn.commit()
+        
+        # Check if the embeddings table exists
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'embeddings'
+            );
+        """)
+        table_exists = cur.fetchone()[0]
+
+        # Create the embeddings table if it doesn't exist
+        if not table_exists:
+            cur.execute("""
+                CREATE TABLE embeddings (
+                    id SERIAL PRIMARY KEY,
+                    reference_id VARCHAR,      -- Unique reference ID for linking back to original data
+                    column_name VARCHAR,       -- Name of the column or context for the embedding
+                    embedding vector(768)      -- Embedding vector column, adjust dimensions as needed
+                );
+            """)
+            conn.commit()
+            print("Created embeddings table with pgvector column.")
+            cur.execute(f"COMMENT ON TABLE embeddings IS 'agent table';")
+            conn.commit()
+        else:
+            print("Embeddings table already exists.")
+        
+        cur.close()
+
+    except Exception as e:
+        conn.rollback()
+        print(f"Error setting up pgvector or embeddings table: {e}")
+
+def get_table_data(table_name: str, page: int, page_size: int):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(f"SELECT to_regclass('{table_name}')")
+    table_exists = cur.fetchone()[0]
+    if not table_exists:
+        raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
+
+    cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+    total_rows = cur.fetchone()[0]
+
+    offset = (page - 1) * page_size
+
+    cur.execute(f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}")
+    rows = cur.fetchall()
+
+    # Get the column names from the cursor description (ensures correct order)
+    columns = [desc[0] for desc in cur.description]
+
+    # Convert column types to React-compatible types (e.g., from information_schema if needed)
+    cur.execute(f"""
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = '{table_name}';
+    """)
+    columns_and_types = cur.fetchall()
+    columns_and_types = convert_postgres_to_react(columns_and_types)
+
+    cur.close()
+    conn.close()
+
+    # Build the table object
+    table_data = {
+        "header": {col_name: col_type for col_name, col_type in columns_and_types},  # Create header as a key-value map
+        "rows": [dict(zip(columns, row)) for row in rows],  # Use correct column ordering from cur.description
+        "page": page,
+        "page_size": page_size,
+        "total_rows": total_rows,
+        "total_pages": (total_rows + page_size - 1) // page_size
+    }
+
+    return table_data  # Return table object with columns and rows
+
 
 def ingest_file(file_path: str, table_name: str):
     """
@@ -25,6 +284,8 @@ def ingest_file(file_path: str, table_name: str):
         postgres_type = dtype_mapping.get(str(dtype), 'TEXT')
         clean_col = sanitize_column_name(col)
         column_definitions.append(f"{clean_col} {postgres_type}")
+
+    
     
     create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
     create_table_query += ", ".join(column_definitions) + ");"
@@ -34,6 +295,8 @@ def ingest_file(file_path: str, table_name: str):
 
     try:
         cur.execute(create_table_query)
+        conn.commit()
+        cur.execute(f"COMMENT ON TABLE {table_name} IS 'frontend table';")
         conn.commit()
     except Exception as e:
         print(f"Error creating table {table_name}: {str(e)}")

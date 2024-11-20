@@ -18,6 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.state.task_registry = {}
 app.state.workplace = Workplace()
 
 

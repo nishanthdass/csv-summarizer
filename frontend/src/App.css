@@ -273,6 +273,16 @@ input::file-selector-button  {
   background-color: #f4f4f4;
 }
 
+.delete-file-icon{
+  cursor: pointer;
+  float: right;
+}
+
+.delete-file-icon:hover{
+  font-weight: bold;
+  color: yellow;
+}
+
 .file-item-selected {
   padding: 10px;
   margin: 5px 0;

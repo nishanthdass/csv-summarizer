@@ -2,10 +2,8 @@ import os
 from dotenv import load_dotenv
 import yaml
 from pyprojroot import here
-import shutil
 from openai import AzureOpenAI
 from langchain.chat_models import AzureChatOpenAI
-import chromadb
 
 load_dotenv()
 

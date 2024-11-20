@@ -5,8 +5,6 @@ from qa_with_postgres.db_connect import get_db_connection, close_db_connection
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_openai import OpenAIEmbeddings
 from qa_with_postgres.db_connect import get_db_connection
-import torch
-import random
 import json
 from transformers import AutoModel
 from psycopg2.extensions import register_adapter, AsIs
@@ -26,9 +24,6 @@ url_pattern = re.compile(
     r'^(https?://|www\.)'                  # Starts with 'http://', 'https://', or 'www.'
 )
 
-def initialize_model(model_name='jinaai/jina-clip-v1'):
-    """Initialize the model on GPU."""
-    return AutoModel.from_pretrained(model_name, trust_remote_code=True).to('cuda')
 
 
 async def poll_completion_and_load_data(table_name, workplace):
@@ -38,7 +33,17 @@ async def poll_completion_and_load_data(table_name, workplace):
         await asyncio.sleep(1)  # Check every second
 
     # Task complete, call `load_summary_data`
-    await workplace.load_summary_data(table_name)
+    try:
+        await workplace.load_summary_data(table_name)
+
+    except Exception as e:
+        return {"detail": f"An error occurred while fetching summary data: {str(e)}"}
+    
+async def stop_crew_flow(table_name, workplace):
+    try:
+        await workplace.stop_summarizer_crew_flow(table_name)
+    except Exception as e:
+        return {"detail": f"An error occurred while fetching summary data: {str(e)}"}
 
 def setup_table_and_fetch_columns(conn, table_name):
     """Check if a table exists, setup necessary configurations, and fetch column names."""
@@ -58,9 +63,8 @@ def setup_table_and_fetch_columns(conn, table_name):
     return cur, columns
 
 
-def fetch_and_process_rows_with_embeddings(table_name):
+async def fetch_and_process_rows_with_embeddings(table_name):
     """Fetch rows, process text into embeddings, and insert into the embeddings table."""
-    model = initialize_model()
     conn = get_db_connection()
     cur, columns = setup_table_and_fetch_columns(conn, table_name)
     url_pattern = re.compile(r'^(https?://|www\.)')
@@ -112,7 +116,7 @@ def fetch_and_process_rows_with_embeddings(table_name):
         row_numbered_json[row_data["row_index"]] = row_data
 
     # Pass repacked_rows and row_numbered_json to create_summary_table
-    create_summary_table(conn, table_name, columns, repacked_rows, row_numbered_json)
+    await create_summary_table(conn, table_name, columns, repacked_rows, row_numbered_json)
 
     task_completion_status[table_name] = True
 
@@ -120,8 +124,43 @@ def fetch_and_process_rows_with_embeddings(table_name):
     conn.close()
 
 
+async def create_summary_table(conn, table_name, columns, repacked_rows, row_numbered_json):
+    """Create a summary table with columns for repacked_rows and summaries for each column."""
+    summary_table_name = f"{table_name}_summary"
+    cur = conn.cursor()
 
-def get_summary_data(table_name):
+    # Drop the summary table if it already exists
+    cur.execute(f"DROP TABLE IF EXISTS {summary_table_name};")
+
+    # Create the summary table
+    cur.execute(f"""
+        CREATE TABLE {summary_table_name} (
+            id SERIAL PRIMARY KEY,
+            repacked_rows JSONB,            -- Store repacked rows as JSONB
+            row_numbered_json JSONB,        -- Store row_numbered_json as JSONB
+            table_summary TEXT DEFAULT '',  -- Column for overall table summary
+            isSummarized BOOLEAN DEFAULT FALSE,  -- New boolean column indicating if the table is summarized
+            results JSONB                   -- JSONB object to json_dict results from Crew
+        );
+    """)
+
+    conn.commit()
+
+    # Insert both repacked_rows and row_numbered_json into the row with id=1
+    cur.execute(
+        f"INSERT INTO {summary_table_name} (id, repacked_rows, row_numbered_json) VALUES (1, %s, %s);",
+        (json.dumps(repacked_rows), json.dumps(row_numbered_json))  # Convert both to JSON format for insertion
+    )
+
+    conn.commit()
+    print(f"Summary table '{summary_table_name}' created with initial data.")
+    cur.execute(f"COMMENT ON TABLE {summary_table_name} IS 'agent table';")
+    conn.commit()
+    cur.close()
+
+
+
+async def get_summary_data(table_name):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(f"SELECT to_regclass('{table_name}')")
@@ -142,45 +181,6 @@ def get_summary_data(table_name):
     cur.close()
     conn.close()
     return data
-
-
-def create_summary_table(conn, table_name, columns, repacked_rows, row_numbered_json):
-    """Create a summary table with columns for repacked_rows and summaries for each column."""
-    summary_table_name = f"{table_name}_summary"
-    cur = conn.cursor()
-
-    # Drop the summary table if it already exists
-    cur.execute(f"DROP TABLE IF EXISTS {summary_table_name};")
-
-    cur.execute(f"""
-        CREATE TABLE {summary_table_name} (
-            id SERIAL PRIMARY KEY,
-            repacked_rows JSONB,          -- Store repacked rows as JSONB
-            row_numbered_json JSONB,      -- Store row_numbered_json as JSONB
-            table_summary TEXT DEFAULT '', -- Column for overall table summary
-            isSummarized BOOLEAN DEFAULT FALSE,  -- New boolean column indicating if the table is summarized
-            {', '.join([f"{col}_summary JSONB DEFAULT '{{\"classifications\": [], \"summary\": \"\"}}'" for col in columns])}  -- Initialize each summary column as JSONB
-        );
-    """)
-
-
-    conn.commit()
-
-    # Insert repacked_rows with empty summaries for each column
-    cur.execute(
-        f"INSERT INTO {summary_table_name} (repacked_rows) VALUES (%s);",
-        (json.dumps(repacked_rows),)  # Convert repacked_rows to JSON format for insertion
-    )
-    conn.commit()
-    cur.execute(
-        f"INSERT INTO {summary_table_name} (row_numbered_json) VALUES (%s);",
-        (json.dumps(row_numbered_json),)  # Convert repacked_rows to JSON format for insertion
-    )
-    conn.commit()
-    print(f"Summary table '{summary_table_name}' created with initial data.")
-    cur.execute(f"COMMENT ON TABLE {summary_table_name} IS 'agent table';")
-    conn.commit()
-    cur.close()
 
 
 def setup_pgvector_and_table(conn):

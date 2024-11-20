@@ -12,6 +12,7 @@ build/
 # Python virtual environment
 env/
 venv/
+crewai_env/
 ENV/
 .venv/
 .VENV/

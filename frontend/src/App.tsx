@@ -7,6 +7,7 @@ import Chatbot from './component/chatbot';
 import AboutProject from './component/about_project';
 import { useResizableSidebar } from './hooks/useResizableSidebar';
 import { useFetchTables } from './hooks//fetch_hooks/useFetchTables';
+import { useDeleteTable } from './hooks/fetch_hooks/useDeleteTable';
 import { useFetchTableData } from './hooks/fetch_hooks/useFetchTableData';
 import pageHomeToggleIcon from './assets/question.png';
 import pageBrowserToggleIcon from './assets/browser.png';
@@ -14,11 +15,6 @@ import databaseTableIcon from './assets/folder.png';
 import chatBotIcon from './assets/chatbotA.png';
 import graphIcon from './assets/curve.png';
 import sidepanelIcon from './assets/hide.png';
-
-
-
-import { TableData } from './utilities/types';
-import { tab } from '@testing-library/user-event/dist/tab';
 
 function App() {
   // Sidebar and resizing
@@ -39,19 +35,31 @@ function App() {
   // Table data fetching and visibility
   const { tables, refresh } = useFetchTables();
   const { tableData, fetchTableData } = useFetchTableData();
+  const { deleteTable } = useDeleteTable(refresh);
   const [table, setTable] = useState<string | null>(null);
   const [showTable, setShowTable] = useState<boolean>(false);
 
   const loadTable = (tableName: string) => {
+    console.log('loadTable');
     setTable(null);
     handleResetZoom();
     setTable(tableName);
+    console.log(tableName);
     fetchTableData(tableName);
     setShowTable(true); // Show the table when loading a new one
   };
 
+
+  const handleDeleteTable = async (tableName: string) => {
+    // setShowTable(false);
+    deleteTable(tableName);
+    if (table === tableName) {
+      setTable(null);
+      setShowTable(false);
+    }
+  };
+
   const toggleTableVisibility = () => {
-    console.log(showTable);
     setShowTable((prev) => !prev);
   };
 
@@ -70,7 +78,7 @@ function App() {
             </div>
             <div className="load-csv-section">
               <h2>Select CSV File</h2>
-              <SelectWindow tables={tables} onTableSelect={loadTable} />
+              <SelectWindow tables={tables} onTableSelect={loadTable} onDeleteTable={handleDeleteTable}/>
             </div>
           </div>
         )}
@@ -88,7 +96,7 @@ function App() {
                 <Chatbot table={table} /> : 
                 <>
                 <h4>Please select a table to start interacting with the chatbot</h4>
-                <SelectWindow tables={tables} onTableSelect={loadTable} />
+                <SelectWindow tables={tables} onTableSelect={loadTable} onDeleteTable={deleteTable} />
                 </>
               }
             </div>

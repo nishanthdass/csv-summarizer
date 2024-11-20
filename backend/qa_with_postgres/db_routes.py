@@ -6,18 +6,21 @@ import re
 from qa_with_postgres.db_connect import get_db_connection
 from qa_with_postgres.file_config import UPLOAD_DIR
 from qa_with_postgres.models import TableNameRequest
-from qa_with_postgres.db_utility import ingest_file, poll_completion_and_load_data, fetch_and_process_rows_with_embeddings, get_table_data
+from qa_with_postgres.db_utility import ingest_file, poll_completion_and_load_data, fetch_and_process_rows_with_embeddings, get_table_data, get_summary_data
 from qa_with_postgres.chatbot import ChatBot
+
+import asyncio
 
 
 
 # Create a router object
 router = APIRouter()
 
-# Main code in endpoint
 @router.post("/upload", status_code=200)
-async def upload_file(file: UploadFile = File(...), background_tasks: BackgroundTasks = BackgroundTasks(), request: Request = None):
-    
+async def upload_file(
+    file: UploadFile = File(...),
+    request: Request = None
+):
     file_location = f"{UPLOAD_DIR}/{file.filename}"
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -25,22 +28,49 @@ async def upload_file(file: UploadFile = File(...), background_tasks: Background
     table_name = re.sub(r'\.csv$', '', file.filename)
 
     try:
-        # Ingest the entire file into the database for retrival
+        # Ingest the file into the database
         ingest_file(file_location, table_name)
 
-        # After adding csv to db, fetch_and_process_rows_with_embeddings will provide random datasample for agents to summarize table
-        background_tasks.add_task(fetch_and_process_rows_with_embeddings, table_name)
+        await fetch_and_process_rows_with_embeddings(table_name)
+        summary_data = await get_summary_data(table_name=table_name.lower() + "_summary")
+        if summary_data:
+            random_values_json = summary_data["repacked_rows"]
+            ordered_values_json = summary_data["row_numbered_json"]
 
-        workplace = request.app.state.workplace
 
-        #  poll_completion_and_load_data will intialize the summarization crew in the CrewAI workplace
-        background_tasks.add_task(poll_completion_and_load_data, table_name, workplace)
+        return {"message": "File uploaded successfully"}
 
     except Exception as e:
         print(f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
-    return {"info": f"file '{file.filename}' saved at '{file_location}'"}
+    
+
+@router.delete("/delete-table", status_code=204)
+async def delete_table(table: TableNameRequest , request: Request):
+    table_name = table.table_name
+    task_registry = request.app.state.task_registry
+    
+    try:
+        request.app.state.workplace.stop_crew_thread("SummarizerCrewFlow")
+        for table_name, tasks in task_registry.items():
+            if table_name == table.table_name:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(f"DROP TABLE IF EXISTS {table_name}")
+        conn.commit()
+        cur.execute(f"DROP TABLE IF EXISTS {table_name}_summary")
+        conn.commit()
+        cur.close()
+        conn.close()
+        return 
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete table")
 
 
 @router.get("/get-tables", status_code=200)
@@ -76,10 +106,10 @@ async def get_files():
 
 
 @router.post("/get-table", status_code=200)
-async def get_table(request: TableNameRequest):
-    table_name = request.table_name
-    page = request.page
-    page_size = request.page_size
+async def get_table(table: TableNameRequest, request: Request):
+    table_name = table.table_name
+    page = table.page
+    page_size = table.page_size
     
     try:
         table_data = get_table_data(table_name, page, page_size)
@@ -90,7 +120,6 @@ async def get_table(request: TableNameRequest):
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
-
 
 @router.post("/chat")
 async def chat(request: Request):

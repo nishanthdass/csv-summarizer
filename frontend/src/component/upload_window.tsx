@@ -1,49 +1,38 @@
 import React, { useState, useRef } from 'react';
-import { useFetchTables } from '../hooks/fetch_hooks/useFetchTables';
+import { useFetchUploadTable } from '../hooks/fetch_hooks/useFetchUploadTable';
+import { useDataContext } from '../context/useDataContext';
 
-interface UploadWindowProps {
-  onSuccessfulUpload: () => void;
-}
-
-const UploadWindow: React.FC<UploadWindowProps> = ({ onSuccessfulUpload }) => {
+const UploadWindow: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [errorMsg, setErrMsg] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null); // Create a ref for the input element
-  const tables = useFetchTables();
+  const [errorMsg, setErrorMsg] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { addTable, refresh } = useDataContext();
+
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
+      setErrorMsg(''); // Clear previous errors
     }
   };
 
-  const uploadFile = async () => {
+  const resetFileInput = () => {
+    setFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleUpload = async () => {
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const response = await fetch('http://localhost:8000/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        console.log('File uploaded successfully');
-        onSuccessfulUpload();
-        setFile(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-      } else {
-        console.error('Error uploading file');
-        setErrMsg('Error uploading file');
-      }
+      await addTable(file);
+      refresh();
+      resetFileInput();
     } catch (error) {
-      console.error('Error:', error);
-      setErrMsg('Error uploading file');
+      setErrorMsg('Error uploading file');
     }
   };
 
@@ -54,9 +43,11 @@ const UploadWindow: React.FC<UploadWindowProps> = ({ onSuccessfulUpload }) => {
           type="file"
           accept=".csv"
           onChange={handleFileUpload}
-          ref={fileInputRef} // Attach the ref to the input element
+          ref={fileInputRef}
         />
-        <button className="upload-button" onClick={uploadFile}>Upload</button>
+        <button className="upload-button" onClick={handleUpload}>
+          Upload
+        </button>
       </div>
       {errorMsg && <p className="error-message" style={{ color: 'red' }}>{errorMsg}</p>}
     </div>

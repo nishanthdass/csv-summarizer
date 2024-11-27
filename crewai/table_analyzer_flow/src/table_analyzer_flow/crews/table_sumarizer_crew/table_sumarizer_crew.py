@@ -14,18 +14,32 @@ DB_HOST = os.getenv('POSTGRES_HOST', 'localhost')
 DB_PORT = os.getenv('POSTGRES_PORT', '5432')
 
 
+class ColumnSummary(BaseModel):
+    summary: str
+    insights: str
+
+class EnhancedSummaries(BaseModel):
+    columns: Dict[str, ColumnSummary]
+
+class ReturnResponse(BaseModel):
+    status: str
+    message: str
+    flow_of_execution: str
+    result: EnhancedSummaries
+
 @CrewBase
 class TableSummarizerCrew:
     """Base class for a crew agent with shared methods."""
+    print(f"Initializing TableSummarizerCrew...{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
     def __init__(self, table_name: str = ""):
         self.table_name = table_name
         self.db_uri = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
         
         # Initialize tools
-        self.database_tool = PGSearchTool(db_uri=self.db_uri, table_name=self.table_name)
-        self.json_search_tool = JSONSearchTool()
+        # self.database_tool = PGSearchTool(db_uri=self.db_uri, table_name=self.table_name)
+        # self.json_search_tool = JSONSearchTool()
         self.nl2sql = NL2SQLTool(db_uri=self.db_uri)
-        self.json_conversion_tool = JSONConversionTool()
+        # self.json_conversion_tool = JSONConversionTool()
 
 
     @tool("JSON Conversion Tool")
@@ -44,30 +58,20 @@ class TableSummarizerCrew:
     def json_summarizer(self) -> Agent:
         return Agent(
             config=self.agents_config["json_summarizer"],
-            tools=[self.json_search_tool],
-            llm="gpt-4o",
-            function_calling_llm="gpt-4o",
+            # tools=[self.json_search_tool],
+            llm="gpt-3.5-turbo",
+            function_calling_llm="gpt-3.5-turbo",
             allow_delegation=True,
             verbose=True,
         )
     
-    @agent
-    def database_admin(self) -> Agent:
-        return Agent(
-            config=self.agents_config["database_admin"],
-            tools=[self.nl2sql, self.json_conversion_tool],
-            llm="gpt-4o",
-            function_calling_llm="gpt-4o",
-            allow_delegation=False,
-            verbose=True,
-        )
     
     @agent
     def result_responder(self) -> Agent:
         return Agent(
             config=self.agents_config["result_responder"],
-            llm="gpt-4o",
-            function_calling_llm="gpt-4o",
+            llm="gpt-3.5-turbo",
+            function_calling_llm="gpt-3.5-turbo",
             allow_delegation=False,
             verbose=True,
         )
@@ -76,30 +80,23 @@ class TableSummarizerCrew:
     def summarize_unordered_json(self) -> Task:
         return Task(
             config=self.tasks_config["summarize_unordered_json"],
-            tools=[self.json_search_tool],
+            # tools=[self.json_search_tool],
         )
     
     @task
     def summarize_ordered_json(self) -> Task:
         return Task(
             config=self.tasks_config["summarize_ordered_json"],
-            tools=[self.json_search_tool],
+            # tools=[self.json_search_tool],
             context=[self.summarize_unordered_json()],
         )
-    
-    @task
-    def insert_summaries(self) -> Task:
-        return Task(
-            config=self.tasks_config["insert_summaries"],
-            tools=[self.nl2sql, self.json_conversion_tool],
-            context=[self.summarize_ordered_json()],
-        )
-    
+
     @task
     def respond_results(self) -> Task:
         return Task(
             config=self.tasks_config["respond_results"],
-            context=[self.insert_summaries()],
+            context=[self.summarize_ordered_json()],
+            output_json = ReturnResponse    
         )
 
     @crew
@@ -107,8 +104,8 @@ class TableSummarizerCrew:
         """Creates the summarizer crew"""
         print("Initializing json_summarizer_agent crew...")
         return Crew(
-            agents=[self.json_summarizer(), self.database_admin(), self.result_responder()],
-            tasks=[self.summarize_unordered_json(), self.summarize_ordered_json(), self.insert_summaries(), self.respond_results()],
+            agents=[self.json_summarizer(), self.result_responder()],
+            tasks=[self.summarize_unordered_json(), self.summarize_ordered_json(), self.respond_results()],
             process=Process.sequential,
             verbose=True,
         )

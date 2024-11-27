@@ -1,7 +1,71 @@
-write_poem:
+# summarize_unordered_json:
+#   description: >
+#     Use the `JSONSearchTool` with `{key_to_list_json}`
+#     - Summarize the data, identifying data types, general purposes, and commonalities across columns without referencing specific values.
+#     - Focus on descriptive terms such as "frequent," "common," "often," and "typically," avoiding specific examples or numbers.
+#     - Insights should be based on general characteristics and disregard the order of values within arrays.
+#   expected_output: >
+#     A JSON containing generalized summaries for each column. Each key should represent a table column and contain:
+#     - "summary": A concise, generalized summary of the column's data.
+#     - "insights": Optional additional generalized insights about common patterns.
+#     - Make sure to use double quotes around all keys and values.
+#   agent: json_summarizer
+
+# summarize_ordered_json:
+#   description: >
+#     Using `JSONSearchTool` with `{index_to_row_json}` as input help to generate insights:
+#     - Generate high-level insights by examining relationships, dependencies, and correlations between columns, emphasizing general patterns and structural observations.
+#     - Each key in {index_to_row_json} represents a row with sub-keys as column names and values.
+#     - Focus on identifying patterns, dependencies, or correlations without referencing specific values.
+#     - Use terms like "generally," "often," and "typically" to describe relationships while avoiding unique data points.
+#     - If providing insights, make sure to reinforce that data sample is is not representative of the whole dataset.
+#     - Finally add the created insights to the JSON output from `summarize_unordered_json`.
+#   expected_output: >
+#     A Python dictionary containing Summaries and Insights for each column. Each key should represent a table column and contain:
+#     - "summary": A high-level summary of the column data without specific values.
+#     - "insights": High-level insights on column relationships and patterns.
+#     - Make sure to use double quotes around all keys and values.
+#   agent: json_summarizer
+
+
+summarize_unordered_json:
   description: >
-    Write a poem about how CrewAI is awesome.
-    Ensure the poem is engaging and adheres to the specified sentence count of {sentence_count}.
+    Look through the data `{key_to_list_json}`as input help to generate summary:
+    - Summarize the data, identifying data types, general purposes, and commonalities across columns without referencing specific values.
+    - If providing insights, make sure to reinforce that data sample is is not representative of the whole dataset.
+    - Focus on descriptive terms such as "frequent," "common," "often," and "typically," avoiding specific examples or numbers.
+    - Insights should be based on general characteristics and disregard the order of values within arrays.
   expected_output: >
-    A beautifully crafted poem about CrewAI, with exactly {sentence_count} sentences.
-  agent: poem_writer
+    A JSON containing generalized summaries for each column. Each key should represent a table column and contain:
+    - "summary": A concise, generalized summary of the column's data.
+    - "insights": Optional additional generalized insights about common patterns.
+    - Make sure to use double quotes around all keys and values.
+  agent: json_summarizer
+
+summarize_ordered_json:
+  description: >
+    Look through the data `{index_to_row_json}` as input help to generate insights:
+    - Generate high-level insights by examining relationships, dependencies, and correlations between columns, emphasizing general patterns and structural observations.
+    - Each key in {index_to_row_json} represents a row with sub-keys as column names and values.
+    - If providing insights, make sure to reinforce that data sample is is not representative of the whole dataset.
+    - Focus on identifying patterns, dependencies, or correlations without referencing specific values.
+    - Use terms like "generally," "often," and "typically" to describe relationships while avoiding unique data points.
+    - Finally add the created insights to the JSON output from `summarize_unordered_json`.
+  expected_output: >
+    A Python dictionary containing Summaries and Insights for each column. Each key should represent a table column and contain:
+    - "summary": A high-level summary of the column data without specific values.
+    - "insights": High-level insights on column relationships and patterns.
+    - Make sure to use double quotes around all keys and values.
+  agent: json_summarizer
+
+
+
+respond_results:
+  description: >
+    Retrieve the output from the `summarize_ordered_json` function and respond with a Python dictionary.
+    The dictionary must indicate the task status and include the exact result returned by `summarize_ordered_json`.
+  expected_output: >
+    A Python dictionary with the following keys:
+    - "status": Either "Completed" or "Failed"
+    - "result": The unaltered output from `summarize_ordered_json`
+  agent: result_responder

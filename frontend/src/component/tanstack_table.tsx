@@ -1,7 +1,9 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { TenstackTableProps } from '../utilities/types';
-import { useAiContext } from '../hooks/useAiContext';
-import { isRowFullySelected } from '../hooks/useAiContext';
+import { useTableSelection } from '../hooks/useTableSelection';
+import { useDataContext } from '../context/useDataContext';
+import { isRowFullySelected } from '../hooks/useTableSelection';
+
 
 import {
   useReactTable,
@@ -14,37 +16,45 @@ import {
 
 const columnHelper = createColumnHelper<any>();
 
-const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchData, zoomLevel }) => {
+const TenstackTable: React.FC<TenstackTableProps> = ({ zoomLevel }) => {
   const [columnResizeMode, setColumnResizeMode] = React.useState<ColumnResizeMode>('onChange');
   const [columnResizeDirection, setColumnResizeDirection] = React.useState<ColumnResizeDirection>('ltr');
 
-  const { aiContextArray, handleCellClick, ifExists } = useAiContext({
-    tableName,
-    tableRows: table.rows,
-  });
+  const { currentTable, tableData } = useDataContext();
 
+  const { tableSelectArray, handleCellClick, handleColumnClick, ifExists } = useDataContext();
+
+  // Prepare columns
   const columns = useMemo(() => {
-    const rowNumberColumn = columnHelper.display({
-      id: 'rowNumber',
-      header: '#',
-      cell: (info) => info.row.index + (table.page - 1) * table.page_size + 1,
-      enableResizing: false,
-      size: 0,
-    });
+    if (!tableData) return [];
+    return [
+      columnHelper.display({
+        id: 'rowNumber',
+        header: '#',
+        cell: (info) => info.row.index + (tableData.page - 1) * tableData.page_size + 1,
+        enableResizing: false,
+        size: 0,
+      }),
+      ...Object.keys(tableData.header).map((key) =>
+        columnHelper.accessor(key, {
+          header: () => key.charAt(0).toUpperCase() + key.slice(1),
+          cell: (info) => info.getValue(),
+          enableResizing: true,
+        })
+      ),
+    ];
+  }, [tableData]);
 
-    const dataColumns = Object.keys(table.header).map((key) =>
-      columnHelper.accessor(key, {
-        header: () => key.charAt(0).toUpperCase() + key.slice(1),
-        cell: (info) => info.getValue(),
-        enableResizing: true,
-      })
-    );
+  // Prepare data
+  const data = useMemo(() => {
+    if (!tableData) return [];
+    return tableData.rows.map((row, index) => ({
+      ...row,
+      tenstackRowNumber: index + (tableData.page - 1) * tableData.page_size,
+    }));
+  }, [tableData]);
 
-    return [rowNumberColumn, ...dataColumns];
-  }, [table.header]);
-
-  const data = useMemo(() => table.rows, [table.rows]);
-
+  // Initialize react-table
   const reactTable = useReactTable({
     data,
     columns,
@@ -53,13 +63,30 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
     getCoreRowModel: getCoreRowModel(),
   });
 
-  useEffect(() => {
-    console.log(aiContextArray);
-  }, [aiContextArray]);
+  // Helper to calculate cell class
+  const getCellClass = (
+    columnId: string,
+    rowIndex: number,
+    rowNumber: number,
+    isRowNumberColumn: boolean
+  ) => {
+    const isRowSelected = isRowFullySelected(rowIndex, rowNumber, tableSelectArray, reactTable, currentTable);
+    const isCellSelected = ifExists(columnId, rowNumber) && !isRowNumberColumn;
+
+    return isCellSelected
+      ? 'selected-cell'
+      : isRowSelected
+      ? 'selected-row'
+      : isRowNumberColumn
+      ? 'row-number-cell'
+      : rowIndex % 2 === 0
+      ? 'even-row'
+      : 'odd-row';
+  };
 
   return (
     <div className="table-container">
-      <div style={{ direction: reactTable.options.columnResizeDirection }}>
+      <div style={{ direction: columnResizeDirection }}>
         <table
           style={{
             transform: `scale(${zoomLevel})`,
@@ -74,6 +101,9 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
                   <th
                     key={header.id}
                     className={header.index === 0 ? 'row-number-cell' : ''}
+                    onClick={() =>
+                        handleColumnClick(header.id, header.index)
+                    }
                     colSpan={header.colSpan}
                     style={{
                       backgroundColor: '#E0E0E0',
@@ -90,14 +120,14 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
                         onDoubleClick={() => header.column.resetSize()}
                         onMouseDown={header.getResizeHandler()}
                         onTouchStart={header.getResizeHandler()}
-                        className={`tbl_resizer ${reactTable.options.columnResizeDirection} ${
+                        className={`tbl_resizer ${columnResizeDirection} ${
                           header.column.getIsResizing() ? 'isResizing' : ''
                         }`}
                         style={{
                           transform:
                             columnResizeMode === 'onEnd' && header.column.getIsResizing()
                               ? `translateX(${
-                                  (reactTable.options.columnResizeDirection === 'rtl' ? -1 : 1) *
+                                  (columnResizeDirection === 'rtl' ? -1 : 1) *
                                   (reactTable.getState().columnSizingInfo.deltaOffset ?? 0)
                                 }px)`
                               : '',
@@ -109,74 +139,36 @@ const TenstackTable: React.FC<TenstackTableProps> = ({ tableName, table, fetchDa
               </tr>
             ))}
           </thead>
-
           <tbody>
-            {reactTable.getRowModel().rows.map((row) => {
-              const rowIndex = row.index;
-              const isRowSelected = isRowFullySelected(rowIndex, aiContextArray, reactTable, tableName);
+            {reactTable.getRowModel().rows.map((row) => (
+              <tr key={row.id}>
+                {row.getVisibleCells().map((cell) => {
+                  const columnId = cell.column.id;
+                  const rowNumber = cell.row.original.tenstackRowNumber;
+                  const isRowNumberColumn = columnId === 'rowNumber';
+                  const cellClassName = getCellClass(columnId, row.index, rowNumber, isRowNumberColumn);
 
-              return (
-                <tr key={row.id}>
-                  {row.getVisibleCells().map((cell) => {
-                    const columnId = cell.column.id;
-                    const isRowNumberColumn = columnId === 'rowNumber';
-                    const isCellSelected = ifExists(columnId, rowIndex) && !isRowNumberColumn;
-
-                    const cellClassName = isCellSelected
-                      ? 'selected-cell'
-                      : isRowSelected
-                      ? 'selected-row'
-                      : isRowNumberColumn
-                      ? 'row-number-cell'
-                      : rowIndex % 2 === 0
-                      ? 'even-row'
-                      : 'odd-row';
-
-                    const header = reactTable
-                      .getHeaderGroups()[0]
-                      .headers.find((h) => h.column.id === columnId);
-
-                    return (
-                      <td
-                        key={cell.id}
-                        onClick={() => handleCellClick(columnId, rowIndex, cell.getValue(), isRowNumberColumn)}
-                        className={cellClassName}
-                        style={{
-                          width: cell.column.getSize(),
-                          position: 'relative',
-                          textAlign: 'center',
-                          padding: '0 4px',
-                          cursor: isRowNumberColumn ? 'pointer' : 'default',
-                        }}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        <div
-                          onDoubleClick={header?.column.resetSize}
-                          onMouseDown={header?.getResizeHandler()}
-                          onTouchStart={header?.getResizeHandler()}
-                          className={`tbl_resizer ${reactTable.options.columnResizeDirection} ${
-                            header?.column.getIsResizing() ? 'isResizing' : ''
-                          }`}
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            right: reactTable.options.columnResizeDirection === 'ltr' ? 0 : 'auto',
-                            left: reactTable.options.columnResizeDirection === 'rtl' ? 0 : 'auto',
-                            height: '100%',
-                            width: '5px',
-                            backgroundColor: header?.column.getIsResizing() ? 'blue' : 'rgba(0, 0, 0, 0.5)',
-                            cursor: 'col-resize',
-                            userSelect: 'none',
-                            touchAction: 'none',
-                            opacity: header?.column.getIsResizing() ? 1 : 0,
-                          }}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
+                  return (
+                    <td
+                      key={cell.id}
+                      onClick={() =>
+                        handleCellClick(columnId, row.index, cell.getValue(), isRowNumberColumn, rowNumber)
+                      }
+                      className={cellClassName}
+                      style={{
+                        width: cell.column.getSize(),
+                        position: 'relative',
+                        textAlign: 'center',
+                        padding: '0 4px',
+                        cursor: isRowNumberColumn ? 'pointer' : 'default',
+                      }}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

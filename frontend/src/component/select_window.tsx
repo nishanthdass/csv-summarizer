@@ -1,50 +1,37 @@
-import { set } from 'lodash';
 import React, { useEffect, useState } from 'react';
+import { useTasks } from '../context/useTaskContext'
+import { useDataContext } from '../context/useDataContext';
 
-type SelectWindowProps = {
-  tables: string[]; // Accept an array of strings instead of File[]
-  onTableSelect: (tableName: string) => void; // Updated to handle string
-  onDeleteTable: (tableName: string) => void;
-};
-
-const SelectWindow: React.FC<SelectWindowProps> = ({ tables, onTableSelect, onDeleteTable }) => {
+const SelectWindow = ({ setShowTable } : { setShowTable: React.Dispatch<React.SetStateAction<boolean>> }) => {
+  const { tables, setTables, currentTable, setCurrentTable, tableData, loadTableData, removeTable} = useDataContext();
   const [table, setTable] = useState<string | null>(null);
-  const [deleteTable, setDeleteTable] = useState<string | null>(null);
-
-  
-
+  const { pollingState } = useTasks(); // Access polling state directly
 
   useEffect(() => {
     if (table) {
-      // console.log("Selected table:", table);
-      onTableSelect(table);  // Pass the selected file to the parent component
+      loadTableData(table);
+      setShowTable(true);
     }
   }, [table]);
   
-  useEffect(() => {
-    if (deleteTable) {
-      // console.log("Delete table:", deleteTable);
-      onDeleteTable(deleteTable);
-      setDeleteTable(null);
-      if (table === deleteTable) {
-        console.log(table, deleteTable);
-        setTable(null);
-        
-      }
-
-    }
-  }, [deleteTable]);
 
   return (
       <div className="file-list-container">
         {tables.length > 0 ? (
           <ul className="file-list">
-            {tables.map((f, index) => (
+            {tables.map((f: string, index: number) => (
               <li className={(f === table ? "file-item-selected" : "file-item")}
                   key={index} 
                   onClick={() => setTable(f)}>
                     {String(f)}
-                    <div className="delete-file-icon" onClick={(event) => {event.stopPropagation(); setDeleteTable(f)}}>X</div>
+                    <div className="file-icon" >
+                      {pollingState[f] ? (
+                        <span className="loader"></span>
+                      ) 
+                      : (
+                        <span className="delete-icon" onClick={(event) => {event.stopPropagation(); removeTable(f); setShowTable(false); setTable(null); setCurrentTable(null)}}>X</span>
+                      )}
+                    </div>
               </li>
             ))}
           </ul>

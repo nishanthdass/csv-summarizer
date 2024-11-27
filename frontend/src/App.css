@@ -267,20 +267,22 @@ input::file-selector-button  {
   margin: 5px 0;
   border: 1px solid #ddd;
   cursor: pointer; 
+  overflow: hidden; 
+  
 }
 
 .file-item:hover {
   background-color: #f4f4f4;
 }
 
-.delete-file-icon{
-  cursor: pointer;
-  float: right;
+
+.file-item:hover .delete-icon {
+  display: inline;
+  
 }
 
-.delete-file-icon:hover{
-  font-weight: bold;
-  color: yellow;
+.file-item-selected .delete-icon {
+  display: inline;
 }
 
 .file-item-selected {
@@ -293,6 +295,41 @@ input::file-selector-button  {
   border: 1px solid #ddd;
 }
 
+.file-icon {
+  cursor: pointer;
+  float: right;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+
+  box-sizing: border-box;
+}
+
+.file-icon:hover .delete-icon {
+  font-weight: bold;
+  color: yellow;
+}
+
+
+.delete-icon {
+  display: none;
+}
+
+.loader {
+  border: 3px solid #656060;
+  border-top: 3px solid #b4b4b4;
+  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+  animation: spin 2s linear infinite; /* Maintains spinning animation */
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 
 .main-content {
   flex-grow: 1;
@@ -538,3 +575,4 @@ td,
   border-radius: 8px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
+

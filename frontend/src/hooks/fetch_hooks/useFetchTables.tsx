@@ -8,7 +8,7 @@ export const useFetchTables = () => {
       const response = await fetch('http://localhost:8000/get-tables');
       if (response.ok) {
         const data = await response.json();
-        setTables(data);
+        return data;
       } else {
         console.error('Error fetching tables');
       }

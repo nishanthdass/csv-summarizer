@@ -8,4 +8,6 @@ class TableNameRequest(BaseModel):
 
 class TableSummaryDataRequest(BaseModel):
     table_name: str
+    total_table_row_size: Optional[int] = None
+    total_sample_row_size: Optional[int] = None
     results: Optional[Dict] = None

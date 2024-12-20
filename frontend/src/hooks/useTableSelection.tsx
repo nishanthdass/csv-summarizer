@@ -1,159 +1,168 @@
 // src/hooks/useTableSelection.ts
-import { useState } from 'react';
-import { TableRowContextObject, TableColumnContextObject } from '../utilities/types';
+import { useDataContext } from '../context/useDataContext';
 
-type useTableSelectionParams = {
-  currentTable: string | null;
-  tableRows: any[];
-};
+export const useTableSelection = () => {
 
-// Main Hook
-export const useTableSelection = ({ currentTable, tableRows }: useTableSelectionParams) => {
-  const [tableSelectArray, setTableSelectArray] = useState<TableRowContextObject[]>([]);
-  const [columnSelectArray, setColumnSelectArray] = useState<TableColumnContextObject[]>([]);
-
+  const { currentTable, currentTableName, tableSelections, setTableSelections } = useDataContext();
+  // Handle Column Click
   const handleColumnClick = (column: string, columnIndex: number) => {
-    if (!currentTable) {
+    if (!currentTableName) {
+      console.warn('No current table selected.');
       return;
     }
-  
-    setColumnSelectArray((prevArray) => {
-      const newObject: TableColumnContextObject = { currentTable, column, columnIndex };
-      const sameColumnExists = prevArray.some(
-        (obj) => obj.currentTable === currentTable && obj.column === column
-      );
-      const anotherColumnExists = prevArray.some(
-        (obj) => obj.currentTable === currentTable && obj.column !== column
-      );
-  
-      if (anotherColumnExists) {
-        return prevArray.map((obj) =>
-          obj.currentTable === currentTable ? newObject : obj
-        );
-      } else if (sameColumnExists) {
-        return prevArray.filter((obj) => obj.currentTable !== currentTable);
-      }
-      return [...prevArray, newObject];
-    });
+
+    const currentSelection = tableSelections[currentTableName] || {
+      selectedCells: [],
+      selectedRows: [],
+      selectedColumns: [],
+    };
+
+    const isAlreadySelected = currentSelection.selectedColumns.some(
+      (col) => col.column === column && col.columnIndex === columnIndex
+    );
+
+    const updatedSelectedColumns = isAlreadySelected
+      ? currentSelection.selectedColumns.filter(
+          (col) => !(col.column === column && col.columnIndex === columnIndex)
+        )
+      : [...currentSelection.selectedColumns, { column, columnIndex }];
+
+    setTableSelections((prevSelections) => ({
+      ...prevSelections,
+      [currentTableName]: {
+        ...currentSelection,
+        selectedColumns: updatedSelectedColumns,
+      },
+    }));
   };
-  
-  
+
+  // Handle Cell Click
   const handleCellClick = (
     column: string,
-    row: number,
     value: any,
-    isRowNumberColumn: boolean,
-    tenstackRowNumber: number | null
+    ctid: string,
+    row: number,
+    tenstackRowNumber: number
   ) => {
-    const rowData = tableRows[row];
+    if (!currentTableName || !currentTable) {
+      console.warn('No current table selected.');
+      return;
+    }
 
-    setTableSelectArray((prevArray) => {
-      if (isRowNumberColumn) {
-        // Full Row Selection Logic
-        const allValuesExist = Object.entries(rowData).every(
-          ([key]) =>
-            doesObjectExistForColumn(prevArray, currentTable, key, tenstackRowNumber)
-        );
+    const currentSelection = tableSelections[currentTableName] || {
+      selectedCells: [],
+      selectedRows: [],
+      selectedColumns: [],
+    };
 
-        return allValuesExist
-          ? filterRowByTableAndColumn(prevArray, currentTable, tenstackRowNumber)
-          : [...prevArray, ...createRowEntries(rowData, currentTable, row, tenstackRowNumber, prevArray)];
+    const isAlreadySelected = currentSelection.selectedCells.some(
+      (cell) => cell.column === column && cell.ctid === ctid
+    );
+
+    const updatedSelectedCells = isAlreadySelected
+      ? currentSelection.selectedCells.filter(
+          (cell) => !(cell.column === column && cell.ctid === ctid)
+        )
+      : [...currentSelection.selectedCells, { column, ctid, row, value, tenstackRowNumber }];
+
+    // Now, determine if the entire row should be selected
+    const getRow = currentTable.data.rows.find((r) => r.ctid === ctid);
+
+    let updatedSelectedRows = currentSelection.selectedRows;
+
+    if (getRow) {
+      // Total cells in the row excluding 'ctid'
+      const totalCellsInRow = Object.keys(getRow).length - 1;
+
+      // Count selected cells in the row
+      const selectedCellsInRow = updatedSelectedCells.filter(
+        (cell) => cell.ctid === ctid
+      ).length;
+
+      if (selectedCellsInRow === totalCellsInRow) {
+        // All cells in the row are selected, add the row to selectedRows
+        const isRowAlreadySelected = currentSelection.selectedRows.some((r) => r.ctid === ctid);
+        if (!isRowAlreadySelected) {
+          updatedSelectedRows = [...currentSelection.selectedRows, { ctid }];
+        }
       } else {
-        // Single Cell Selection Logic
-        const newObject: TableRowContextObject = { currentTable, column, row, value, tenstackRowNumber };
-        const exists = doesObjectExistForColumn(prevArray, currentTable, column, tenstackRowNumber);
-
-        return exists
-          ? prevArray.filter(
-              (obj) =>
-                !(
-                  obj.currentTable === currentTable &&
-                  obj.column === column &&
-                  obj.tenstackRowNumber === tenstackRowNumber
-                )
-            )
-          : [...prevArray, newObject];
+        // Not all cells are selected, remove the row from selectedRows if it's there
+        updatedSelectedRows = currentSelection.selectedRows.filter((r) => r.ctid !== ctid);
       }
-    });
+    }
+
+    // Update the tableSelections
+    setTableSelections((prevSelections) => ({
+      ...prevSelections,
+      [currentTableName]: {
+        ...currentSelection,
+        selectedCells: updatedSelectedCells,
+        selectedRows: updatedSelectedRows,
+      },
+    }));
   };
 
-  const ifExists = (column: string, tenstackRowNumber: number) =>
-    tableSelectArray.some(
-      (obj) =>
-        obj.column === column &&
-        obj.currentTable === currentTable &&
-        obj.tenstackRowNumber === tenstackRowNumber
+  // Handle Row Click
+  const handleRowClick = (ctid: string, row: number, tenstackRowNumber: number) => {
+    if (!currentTableName || !currentTable) {
+      console.warn('No current table selected.');
+      return;
+    }
+
+    const currentSelection = tableSelections[currentTableName] || {
+      selectedCells: [],
+      selectedRows: [],
+      selectedColumns: [],
+    };
+
+    const isRowAlreadySelected = currentSelection.selectedRows.some(
+      (row) => row.ctid === ctid
     );
-    
-  return { tableSelectArray, columnSelectArray, handleCellClick, handleColumnClick, ifExists };
-};
 
-// Utility Functions
-export const doesObjectExistForColumn = (
-  contextArray: TableRowContextObject[],
-  tableName: string | null,
-  column: string,
-  tenstackRowNumber: number | null
-) => {
-  return contextArray.some(
-    (obj) =>
-      obj.currentTable === tableName &&
-      obj.column === column &&
-      obj.tenstackRowNumber === tenstackRowNumber
-  );
-};
+    const getRow = currentTable.data.rows.find((r) => r.ctid === ctid);
 
-export const filterRowByTableAndColumn = (
-  contextArray: TableRowContextObject[],
-  tableName: string | null,
-  tenstackRowNumber: number | null
-) => {
-  return contextArray.filter(
-    (obj) => !(obj.currentTable === tableName && obj.tenstackRowNumber === tenstackRowNumber)
-  );
-};
+    let updatedSelectedRows = currentSelection.selectedRows;
+    let updatedSelectedCells = currentSelection.selectedCells;
 
-export const createRowEntries = (
-  rowData: any,
-  currentTable: string | null,
-  row: number,
-  tenstackRowNumber: number | null,
-  existingArray: TableRowContextObject[]
-) => {
-  return Object.entries(rowData)
-    .filter(
-      ([key]) =>
-        !doesObjectExistForColumn(existingArray, currentTable, key, tenstackRowNumber)
-    )
-    .map(([key, value]) => ({
-      currentTable,
-      column: key,
-      row,
-      value,
-      tenstackRowNumber,
+    if (getRow && !isRowAlreadySelected) {
+      // Add the ctid of the row to the selected rows array
+      updatedSelectedRows = [...currentSelection.selectedRows, { ctid }];
+
+      // Add all cells of the row (if not already selected)
+      const newCells = Object.entries(getRow)
+        .filter(([key]) => key !== 'ctid')
+        .map(([key, value]) => ({
+          column: key,
+          ctid,
+          row,
+          value,
+          tenstackRowNumber,
+        }));
+
+      // Avoid duplicates
+      updatedSelectedCells = [
+        ...currentSelection.selectedCells.filter((cell) => cell.ctid !== ctid),
+        ...newCells,
+      ];
+    } else {
+      // Remove the ctid of the row from the selected rows array
+      updatedSelectedRows = currentSelection.selectedRows.filter((r) => r.ctid !== ctid);
+      // Remove all cells of the row
+      updatedSelectedCells = currentSelection.selectedCells.filter((cell) => cell.ctid !== ctid);
+    }
+
+    // Update the tableSelections
+    setTableSelections((prevSelections) => ({
+      ...prevSelections,
+      [currentTableName]: {
+        ...currentSelection,
+        selectedRows: updatedSelectedRows,
+        selectedCells: updatedSelectedCells,
+      },
     }));
-};
+  };
 
-// Utility for Row Selection
-export const isRowFullySelected = (
-  rowIndex: number,
-  tenstackRowNumber: number | null,
-  tableSelectArray: TableRowContextObject[],
-  reactTable: any,
-  tableName: string | null
-) => {
-  const columnIds = reactTable
-    .getAllColumns()
-    .filter((col: any) => col.id !== 'rowNumber')
-    .map((col: any) => col.id);
+  
 
-  return columnIds.every((columnId: string) =>
-    tableSelectArray.some(
-      (obj) =>
-        obj.currentTable === tableName &&
-        obj.column === columnId &&
-        obj.row === rowIndex &&
-        obj.tenstackRowNumber === tenstackRowNumber
-    )
-  );
+  return { handleColumnClick, handleCellClick, handleRowClick };
 };

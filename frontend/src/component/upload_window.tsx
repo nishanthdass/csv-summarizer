@@ -1,19 +1,20 @@
 import React, { useState, useRef } from 'react';
-import { useFetchUploadTable } from '../hooks/fetch_hooks/useFetchUploadTable';
 import { useDataContext } from '../context/useDataContext';
+import { useTableUploadSelect } from '../hooks/useTableUploadSelect';
+
 
 const UploadWindow: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { addTable, refresh } = useDataContext();
+  const { addTableToDatabase, loadTablesFromDatabase } = useTableUploadSelect();
 
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
-      setErrorMsg(''); // Clear previous errors
+      setErrorMsg('');
     }
   };
 
@@ -28,8 +29,8 @@ const UploadWindow: React.FC = () => {
     if (!file) return;
 
     try {
-      await addTable(file);
-      refresh();
+      await addTableToDatabase(file);
+      await loadTablesFromDatabase();
       resetFileInput();
     } catch (error) {
       setErrorMsg('Error uploading file');

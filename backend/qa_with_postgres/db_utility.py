@@ -140,7 +140,11 @@ async def create_summary_table(conn, table_name, columns, repacked_rows, row_num
             row_numbered_json JSONB,        -- Store row_numbered_json as JSONB
             table_summary TEXT DEFAULT '',  -- Column for overall table summary
             isSummarized BOOLEAN DEFAULT FALSE,  -- New boolean column indicating if the table is summarized
-            results JSONB                   -- JSONB object to json_dict results from Crew
+            results JSONB,                   -- JSONB object to json_dict results from Crew
+            assistant_id VARCHAR(255),      -- New column for storing assistant_id
+            vector_store_id VARCHAR(255),    -- New column for storing vector_store_id
+            thread_id VARCHAR(255)         -- New column for storing thread_id
+
         );
     """)
 
@@ -158,9 +162,37 @@ async def create_summary_table(conn, table_name, columns, repacked_rows, row_num
     conn.commit()
     cur.close()
 
+async def add_assistant_setting_to_db(table_name, assistant_id, vector_store_id, thread_id):
+    summary_table_name = f"{table_name}_summary"
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE {summary_table_name} SET assistant_id = %s, vector_store_id = %s, thread_id = %s WHERE id = 1;", (assistant_id, vector_store_id, thread_id))
+    conn.commit()
+    cur.close()
 
 
-async def get_summary_data(table_name):
+async def get_assistant_id(table_name):
+    summary_table_name = f"{table_name}_summary"
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"SELECT assistant_id FROM {summary_table_name} WHERE id = 1;")
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    return result
+
+async def get_vector_store_id(table_name):
+    summary_table_name = f"{table_name}_summary"
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"SELECT vector_store_id FROM {summary_table_name} WHERE id = 1;")
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    return result
+
+async def get_table_size(table_name):
+    print("Fetching table size...: ", table_name)
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(f"SELECT to_regclass('{table_name}')")
@@ -168,19 +200,40 @@ async def get_summary_data(table_name):
     if not table_exists:
         raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
     
-    cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name.lower()}'")
-    columns = [row[0] for row in cur.fetchall()]
-    
-    cur.execute(f"SELECT * FROM {table_name}")
-    rows = cur.fetchall()
-    data = {column: None for column in columns}
-
-    for row in rows:
-        for i, column in enumerate(columns):
-            data[column] = row[i]
+    cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+    table_size = cur.fetchone()[0]
     cur.close()
     conn.close()
-    return data
+    return table_size
+
+
+async def get_summary_data(table_name):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Check if the table exists
+    cur.execute(f"SELECT to_regclass('{table_name}')")
+    table_exists = cur.fetchone()[0]
+    if not table_exists:
+        raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
+
+    # Fetch data as JSON from PostgreSQL
+    query = f"""
+        SELECT json_agg(json_build_object(
+            id, to_jsonb({table_name}) - 'id'
+        ))
+        FROM {table_name};
+    """
+    cur.execute(query)
+    result = cur.fetchone()[0]
+
+    cur.close()
+    conn.close()
+
+    # Return the JSON object as a dictionary
+    return result[0]["1"] if result else {}
+
+
 
 
 def setup_pgvector_and_table(conn):
@@ -237,7 +290,7 @@ def get_table_data(table_name: str, page: int, page_size: int):
 
     offset = (page - 1) * page_size
 
-    cur.execute(f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}")
+    cur.execute(f"SELECT *, ctid FROM {table_name} LIMIT {page_size} OFFSET {offset}")
     rows = cur.fetchall()
 
     # Get the column names from the cursor description (ensures correct order)
@@ -344,3 +397,41 @@ def convert_postgres_to_react(columns_and_types):
         columns_and_types[i] = (column_name, react_type)
 
     return columns_and_types
+
+
+async def if_table_exists(table_name):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"SELECT to_regclass('{table_name}')")
+    table_exists = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return table_exists
+
+async def add_thread_id(table_name, thread_id):
+    summary_table = f"{table_name}_summary"
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE {summary_table} SET thread_id = %s WHERE id = 1;", (thread_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+async def get_thread_id(table_name):
+    summary_table = f"{table_name}_summary"
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"SELECT thread_id FROM {summary_table} WHERE id = 1;")
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    return result
+
+async def remove_thread_id(table_name):
+    summary_table = f"{table_name}_summary"
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE {summary_table} SET thread_id = NULL WHERE id = 1;")
+    conn.commit()
+    cur.close()
+    conn.close()

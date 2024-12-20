@@ -88,13 +88,14 @@ html, body {
   align-items: center; /* Center vertically */
   background-color: #535252;
   border-bottom-right-radius: 15px;
-  border-top-right-radius: 15px; 
+  border-top-right-radius: 15px;
+  cursor: pointer;
+  border-left: none;
 }
 
 .sidebar-table-button img {
   width: 32px;
   height: 32px;
-  cursor: pointer;
 }
 
 .sidebar-graph-button {
@@ -105,13 +106,21 @@ html, body {
   align-items: center; /* Center vertically */
   background-color: #396ad291;
   border-bottom-right-radius: 15px;
-  border-top-right-radius: 15px; 
+  border-top-right-radius: 15px;
+  cursor: pointer;
+  border-left: none;
 }
 
 .sidebar-graph-button img {
   width: 32px;
   height: 32px;
-  cursor: pointer;
+}
+
+.sidebar-graph-button:disabled {
+  opacity: 0.5; /* Make it semi-transparent */
+  cursor: not-allowed; /* Change the cursor to indicate it's not clickable */
+  background-color: #0b3ca691;
+  z-index: 10; /* Ensure it appears above the content */
 }
 
 .sidebar-chat-button {
@@ -483,11 +492,32 @@ td,
   cursor: not-allowed;
 }
 
-.row-number-cell {
-  width: min-content;
+
+.table-container th.row-number-cell {
+  background-color: #E0E0E0;
+  position: relative; /* Fixed */
+  cursor: default; /* Fixed */
   text-align: center;
-  padding: 0 4px;  /* Minimal padding */
 }
+
+.table-container th.header-column-cells {
+  background-color: #E0E0E0;
+  position: relative; /* Fixed */
+  cursor: pointer; /* Fixed */
+  text-align: center;
+}
+
+.table-container th.header-column-cells:hover {
+  background-color: #a6a4a4;
+}
+
+.table-container th.selected-column {
+  background-color: #e7a748;
+  position: relative; /* Fixed */
+  cursor: pointer; /* Fixed */
+  text-align: center;
+}
+
 
 
 .selected-cell {
@@ -499,6 +529,9 @@ td,
 }
 
 .row-number-cell {
+  width: min-content;
+  text-align: center;
+  padding: 0 4px;  /* Minimal padding */
   background-color: #E0E0E0; /* Row number column */
 }
 

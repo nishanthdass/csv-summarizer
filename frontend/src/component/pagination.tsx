@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import doubleLeft from '../assets/double-left.png';
 import left from '../assets/left.png';
 import right from '../assets/right.png';
@@ -8,58 +8,73 @@ import zoom from '../assets/plus-small.png';
 import zoomOut from '../assets/minus-small.png';
 import resetZoom from '../assets/reset-zoom.png';
 import { useDataContext } from '../context/useDataContext';
-import { table } from 'console';
+import { useTableUploadSelect } from '../hooks/useTableUploadSelect';
+import { useUIContext } from '../context/useUIcontext';
 
-interface PaginationProps {
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onResetZoom: () => void;
-}
+const Pagination = () => {
+  const { currentTable } = useDataContext();
+  const { tableZoomLevel, settableZoomLevel } = useUIContext();
+  const { loadTableFromDatabase } = useTableUploadSelect();
 
-const Pagination: React.FC<PaginationProps> = ({ onZoomIn, onZoomOut, onResetZoom }) => {
-  const { currentTable, tableData, setTableData, loadTableData, } = useDataContext();
+  
+  const handleZoomIn = useCallback(() => {
+    if (currentTable?.name) {
+      settableZoomLevel((prevZoomLevels) => ({
+        ...prevZoomLevels,
+        [currentTable.name]: Math.min((prevZoomLevels[currentTable.name] || 1) + 0.1, 2),
+      }));
+    }
+  }, [currentTable, settableZoomLevel]);
+  
+  const handleZoomOut = useCallback(() => {
+    if (currentTable?.name) {
+      settableZoomLevel((prevZoomLevels) => ({
+        ...prevZoomLevels,
+        [currentTable.name]: Math.max((prevZoomLevels[currentTable.name] || 1) - 0.1, 0.5),
+      }));
+    }
+  }, [currentTable, settableZoomLevel]);
+  
+  const handleResetZoom = useCallback(() => {
+    if (currentTable?.name) {
+      settableZoomLevel((prevZoomLevels) => ({
+        ...prevZoomLevels,
+        [currentTable.name]: 1,
+      }));
+    }
+  }, [currentTable, settableZoomLevel]);
+  
+  
 
-
-  const handlePageChange = async (newPage: number) => {
-    if (!tableData || newPage === tableData.page || typeof currentTable !== 'string') return;
-
-    // Update the page in the state and fetch new data
-    setTableData((prev) => ({
-      ...prev!,
-      page: newPage,
-    }));
+  const handlePageChange = async (newPage: number | undefined) => {
+    if (newPage === undefined || !currentTable || newPage === currentTable.data.page) return;
 
     if (currentTable) {
-      await loadTableData(currentTable, newPage, tableData.page_size);
+      await loadTableFromDatabase(currentTable.name, newPage, currentTable.data.page_size);
     }
   };
 
-  const handlePageSizeChange = async (newPageSize: number) => {
-    if (!tableData) return;
+  const handlePageSizeChange = async (newPageSize: number | undefined) => {
+    if (!currentTable) return;
 
-    // Update the page size in the state and fetch new data
-    setTableData((prev) => ({
-      ...prev!,
-      page_size: newPageSize,
-    }));
     if (currentTable) {
-      await loadTableData(currentTable, tableData.page, newPageSize);
+      await loadTableFromDatabase(currentTable.name, currentTable.data.page, newPageSize);
     }
   };
 
-  if (!tableData) return null;
+  if (!loadTableFromDatabase) return null;
 
   return (
     <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between' }}>
       {/* Zoom Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-        <button className="pagination-button" onClick={onZoomOut}>
+        <button className="pagination-button" onClick={handleZoomOut}>
           <img src={zoomOut} alt="Zoom Out" />
         </button>
-        <button className="pagination-button small" onClick={onResetZoom}>
+        <button className="pagination-button small" onClick={handleResetZoom}>
           <img src={resetZoom} alt="Reset Zoom" />
         </button>
-        <button className="pagination-button" onClick={onZoomIn}>
+        <button className="pagination-button" onClick={handleZoomIn}>
           <img src={zoom} alt="Zoom In" />
         </button>
       </div>
@@ -69,14 +84,14 @@ const Pagination: React.FC<PaginationProps> = ({ onZoomIn, onZoomOut, onResetZoo
         <button
           className="pagination-button"
           onClick={() => handlePageChange(1)}
-          disabled={tableData.page === 1}
+          disabled={currentTable?.data.page === 1}
         >
           <img src={doubleLeft} alt="First Page" />
         </button>
         <button
           className="pagination-button"
-          onClick={() => handlePageChange(tableData.page - 1)}
-          disabled={tableData.page === 1}
+          onClick={() => handlePageChange((currentTable?.data.page || 1)- 1)}
+          disabled={currentTable?.data.page === 1}
         >
           <img src={left} alt="Previous Page" />
         </button>
@@ -85,23 +100,23 @@ const Pagination: React.FC<PaginationProps> = ({ onZoomIn, onZoomOut, onResetZoo
           <input
             type="number"
             min="1"
-            value={tableData.page}
+            value={currentTable?.data.page}
             onChange={(e) => handlePageChange(Number(e.target.value))}
             style={{ width: '40px' }}
           />{' '}
-          of {tableData.total_pages}
+          of {currentTable?.data.total_pages}
         </span>
         <button
           className="pagination-button"
-          onClick={() => handlePageChange(tableData.page + 1)}
-          disabled={tableData.page === tableData.total_pages}
+          onClick={() => handlePageChange((currentTable?.data.page || 1)+ 1)}
+          disabled={currentTable?.data.page === currentTable?.data.total_pages}
         >
           <img src={right} alt="Next Page" />
         </button>
         <button
           className="pagination-button"
-          onClick={() => handlePageChange(tableData.total_pages)}
-          disabled={tableData.page === tableData.total_pages}
+          onClick={() => handlePageChange(currentTable?.data.total_pages)}
+          disabled={currentTable?.data.page === currentTable?.data.total_pages}
         >
           <img src={doubleRight} alt="Last Page" />
         </button>
@@ -109,7 +124,7 @@ const Pagination: React.FC<PaginationProps> = ({ onZoomIn, onZoomOut, onResetZoo
       {/* Page Size Selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
         Show{' '}
-        <select value={tableData.page_size} onChange={(e) => handlePageSizeChange(Number(e.target.value))}>
+        <select value={currentTable?.data.page_size} onChange={(e) => handlePageSizeChange(Number(e.target.value))}>
           {[10, 20, 30, 40, 50].map((size) => (
             <option key={size} value={size}>
               {size}
@@ -123,3 +138,4 @@ const Pagination: React.FC<PaginationProps> = ({ onZoomIn, onZoomOut, onResetZoo
 };
 
 export default Pagination;
+

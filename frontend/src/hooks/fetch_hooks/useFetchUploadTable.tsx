@@ -1,14 +1,8 @@
 import { useCallback } from 'react';
-import { usePollingTasks } from '../../hooks/fetch_hooks/usePollingTasks';
-import { useTasks } from '../../context/useTaskContext';
-import { useDataContext } from '../../context/useDataContext';
 
 export const useFetchUploadTable = () => {
-  const { tasks, setTasks } = useTasks();
-  const { addTask } = usePollingTasks(tasks, setTasks);
-
   const fetchUploadTable = useCallback(
-    async (file: File): Promise<void> => {
+    async (file: File): Promise<any> => {
       const formData = new FormData();
       formData.append('file', file);
 
@@ -19,17 +13,7 @@ export const useFetchUploadTable = () => {
         });
 
         if (response.ok) {
-          const data = await response.json();
-
-          // Add task
-          addTask({
-            task_id: data.task.task_id,
-            table_name: data.task.table_name,
-            description: data.task.description,
-            status: data.task.status,
-            result: data.task.result,
-          });
-
+          return await response.json(); // Return the parsed response data
         } else {
           throw new Error('Error uploading file');
         }
@@ -38,7 +22,7 @@ export const useFetchUploadTable = () => {
         throw error; // Allow the component to handle errors
       }
     },
-    [addTask]
+    []
   );
 
   return { fetchUploadTable };

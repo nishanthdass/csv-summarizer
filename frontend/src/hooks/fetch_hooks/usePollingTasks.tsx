@@ -33,6 +33,7 @@ export const usePollingTasks = (tasks: Task[], setTasks: React.Dispatch<React.Se
   };
 
   useEffect(() => {
+    console.log("Tasks updated:", tasks);
     intervalRef.current = setInterval(() => {
       pollingRef.current.forEach((taskId) => {
         const task = tasks.find((task) => task.task_id === taskId);

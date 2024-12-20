@@ -52,14 +52,13 @@ class TableSummarizerCrew:
             # Handle errors from the tool gracefully
             return f"Error in JSON Conversion Tool: {str(e)}"
 
-
-
     @agent
     def json_summarizer(self) -> Agent:
         return Agent(
             config=self.agents_config["json_summarizer"],
             # tools=[self.json_search_tool],
             llm="gpt-3.5-turbo",
+            temperature = 0.4,
             function_calling_llm="gpt-3.5-turbo",
             allow_delegation=True,
             verbose=True,
@@ -71,6 +70,7 @@ class TableSummarizerCrew:
         return Agent(
             config=self.agents_config["result_responder"],
             llm="gpt-3.5-turbo",
+            temperature = 0.0,
             function_calling_llm="gpt-3.5-turbo",
             allow_delegation=False,
             verbose=True,

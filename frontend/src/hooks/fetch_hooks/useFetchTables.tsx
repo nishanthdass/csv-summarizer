@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
 export const useFetchTables = () => {
-  const [tables, setTables] = useState<string[]>([]);
 
   const fetchTables = useCallback(async () => {
     try {
@@ -21,5 +20,5 @@ export const useFetchTables = () => {
     fetchTables();
   }, [fetchTables]);
 
-  return { tables, refresh: fetchTables };
+  return { fetchTables };
 };

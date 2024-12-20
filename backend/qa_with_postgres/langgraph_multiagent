@@ -1,0 +1,275 @@
+import getpass
+import os
+from typing import Sequence, Dict, List, Literal, Optional
+from typing_extensions import Annotated, TypedDict
+from langchain_community.utilities import SQLDatabase
+from langchain_community.agent_toolkits import create_sql_agent
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, StateGraph, END
+from langgraph.graph.message import add_messages
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import SystemMessage, trim_messages
+from langgraph.prebuilt import ToolNode
+from langchain_core.tools import tool
+from langchain_core.output_parsers import JsonOutputParser
+from pydantic import BaseModel, Field
+from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
+from langchain.agents.format_scratchpad.openai_tools import (
+    format_to_openai_tool_messages,
+)
+from langchain.agents.output_parsers.openai_tools import OpenAIToolsAgentOutputParser
+
+import uuid
+import asyncio
+
+# Load environment variables
+load_dotenv()
+
+# Database and model setup
+DB_USER = os.getenv('POSTGRES_USER')
+DB_PASSWORD = os.getenv('POSTGRES_PASSWORD')
+DB_NAME = os.getenv('POSTGRES_DB')
+DB_HOST = os.getenv('POSTGRES_HOST')
+DB_PORT = os.getenv('POSTGRES_PORT')
+
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+
+db_url = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+
+
+# Define trimmer for messages
+trimmer = trim_messages(
+    max_tokens=6500,
+    strategy="last",
+    token_counter=model,
+    include_system=True,
+    allow_partial=False,
+    start_on="human",
+)
+
+
+# Define state schema
+class State(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], add_messages]
+    language: str
+    next: str
+    table_name: str  # Add this line
+    agent_scratchpads: list
+
+
+class Route(BaseModel):
+    agent: str = Field(description="name of the agent to route the question to")
+    question: str = Field(description="question to route to the agent")
+    answer: Optional[str] = Field(default=None, description="answer to the question, if answer is not ready yet then None")
+
+# --- Define Node Functions ---
+async def supervisor_node(state: State) -> State:
+    print("Supervisor Node")
+    # Trim messages as before
+    trimmed_messages = trimmer.invoke(state["messages"])
+
+    parser = JsonOutputParser(pydantic_object=Route)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", 
+        "You are the supervisor of a conversation about {table_name} table. Never make assumptions about the content of the table based on the name of the table as a bananas column can exist in the table. Ensure that all decisions are based on facts from queries or from the other agents."
+        "Your tasks are:\n\n"
+        "1. If a few database queries are needed to answer the user's question, then route the question to `agent_1`. DO not make assumptions.\n\n"
+        "2. If the question requires predictive analysis route it to `agent_2`.\n\n"
+        "3. If no database query or deeper analysis is needed, set the agent to 'supervisor' and answer the question.\n\n"
+        "4. If the question has nothing to do with the {table_name} table, set the agent to 'supervisor' and explain why. Never assueme anything about the table"
+        "the question is unrelated.\n\n"
+        "Return in json format:\n"
+        "{{\"agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"answer_text\"}}\n\n"
+        "The user's last request:\n{user_message}")
+    ])
+
+    chain = prompt | model | parser
+
+    inputs = {
+        "user_message": trimmed_messages[-1].content if trimmed_messages else "",
+        "table_name": state["table_name"]
+    }
+
+
+    response = await chain.ainvoke(inputs)
+
+    if response["agent"] == "supervisor":
+        return {"messages": [AIMessage(content=response["answer"])], "next": "__end__"}
+    
+    print(f"Routing question to {response['agent']}")
+    print(f"Question: {trimmed_messages[-1].content}")
+    
+    return {"messages": [trimmed_messages[-1].content], "next": response["agent"]}
+
+
+async def agent_1_node(state: State) -> State:
+    print("Agent 1 Node")
+    
+    user_message = ""
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            user_message = msg.content
+            break
+
+    # Access the table_name from state
+    table_name = state["table_name"]
+    global manager
+    sql_agent_for_table = manager.chatbots[table_name]["sql_agent"]
+    sql_result = sql_agent_for_table(user_message)
+
+
+    # Include intermediate steps in the agent scratchpad
+    intermediate_steps = sql_result.get("intermediate_steps", [])
+    intermediate_steps =format_to_openai_tool_messages(intermediate_steps)
+
+
+    
+    # Add the results to state messages and agent scratchpad
+    result_message = AIMessage(content=sql_result["output"])
+    state["messages"].append(result_message)
+    state["agent_scratchpads"].append(intermediate_steps)
+
+    return {"messages": state["messages"], "next": "agent_3"}
+
+
+async def agent_2_node(state: State) -> State:
+    print("Agent 2 Node")
+    trimmed_messages = trimmer.invoke(state["messages"])
+
+    prompt = ChatPromptTemplate.from_messages([
+            ("system", 
+            "You are a data analysist with expertise in SQL queries. your task is to respond to the users question with all the nessary data analytics needed to answer the question.\n\n"
+            "The user's last request:\n{ai_message}")
+        ]).invoke({"ai_message": trimmed_messages[-1].content if trimmed_messages else "",
+                "table_name": state["table_name"]})
+    
+    response = await model.ainvoke(prompt)
+
+    return {"messages": [AIMessage(content=response.content)], "next": "__end__"}
+
+
+async def agent_3_node(state: State) -> State:
+    print("Agent 3 Node")
+
+    # print(state["messages"])
+
+    trimmed_messages = trimmer.invoke(state["messages"])
+    
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            user_message = msg.content
+            break
+
+    prompt = ChatPromptTemplate.from_messages([
+            ("system", 
+            "You are a data analysist with expertise in understanting data. Your task is to validate the answer to the user's question.\n\n"
+            "The user's last request:\n{user_message}\n\n"
+            "Here is the message from the agent:\n{ai_message}. \n\n"
+            "Look at the agent scratchpad: {agent_scratchpad}. \n\n"
+            "Ensure the answer is correct and informative based on the agent scratchpad. If the answer is not specific enough, and requires a more indepth analyis, then let the user know. \n\n"), 
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ]).invoke({"ai_message": trimmed_messages[-1].content if trimmed_messages else "",
+                "table_name": state["table_name"], "agent_scratchpad": state["agent_scratchpads"][-1] if state["agent_scratchpads"] else [], "user_message": user_message})
+    
+    response = await model.ainvoke(prompt)
+
+    return {"messages": [AIMessage(content=response.content)], "next": "__end__"}
+
+
+
+# --- Build the State Graph ---
+workflow = StateGraph(state_schema=State)
+
+# Add nodes
+workflow.add_node("supervisor", supervisor_node)
+workflow.add_node("agent_1", agent_1_node)
+workflow.add_node("agent_2", agent_2_node)
+workflow.add_node("agent_3", agent_3_node)
+
+# Start from supervisor
+workflow.add_edge(START, "supervisor")
+workflow.add_edge("agent_1", "agent_3")
+workflow.add_edge("agent_2", END)
+workflow.add_edge("agent_3", END)
+
+
+workflow.add_conditional_edges("supervisor", lambda s: s["next"])
+
+memory = MemorySaver()
+app = workflow.compile(checkpointer=memory)
+
+# The rest of your ChatbotManager and main logic remain the same:
+class ChatbotManager:
+    def __init__(self):
+        self.chatbots: Dict[str, Dict[str, List[BaseMessage]]] = {}
+
+    async def create_chatbot(self, table_name: str, language: str):
+        if table_name in self.chatbots:
+            raise ValueError(f"Chatbot for table '{table_name}' already exists.")
+        
+        # Create a table-specific db object
+        db_for_table = SQLDatabase.from_uri(db_url, include_tables=[table_name])
+        toolkit = SQLDatabaseToolkit(db=db_for_table, llm=model)
+        tools = toolkit.get_tools()
+        sql_agent_for_table = create_sql_agent(llm=model, toolkit=toolkit, agent_type="openai-tools", verbose=True, agent_executor_kwargs={"return_intermediate_steps": True})
+
+        new_uuid = uuid.uuid4()
+        config = {"configurable": {"thread_id": f"{table_name}_{new_uuid}"}}
+        self.chatbots[table_name] = {
+            "language": language,
+            "messages": [],
+            "config": config,
+            "sql_agent": sql_agent_for_table,  # store the table-specific agent
+            "table_name": table_name
+        }
+        print(f"Chatbot for table '{table_name}' initialized.")
+
+
+    async def add_chatbot_message(self, table_name: str, message: BaseMessage):
+        if table_name not in self.chatbots:
+            raise ValueError(f"No chatbot found for table '{table_name}'.")
+        self.chatbots[table_name]["messages"].append(message)
+
+    async def get_messages(self, table_name: str) -> List[BaseMessage]:
+        if table_name not in self.chatbots:
+            raise ValueError(f"No chatbot found for table '{table_name}'.")
+        return self.chatbots[table_name]["messages"]
+    
+    async def stream_events_for_table(self, table_name: str):
+        if table_name not in self.chatbots:
+            raise ValueError(f"No chatbot found for table '{table_name}'.")
+
+        state = {
+            "messages": await self.get_messages(table_name),
+            "language": self.chatbots[table_name]["language"],
+            "next": "supervisor",
+            "table_name": table_name,
+            "agent_scratchpads": []
+        }
+        config = self.chatbots[table_name]["config"]
+
+        async for event in app.astream_events(state, config, version="v2"):
+            yield event
+
+manager = ChatbotManager()
+
+# Example usage with streaming
+async def main():
+    await manager.create_chatbot("housing", "English")
+
+    await manager.add_chatbot_message("housing", HumanMessage(content="based on previous housing prices, what would be the cost of a home that is 5000 square feet?"))
+    # await manager.add_chatbot_message("housing", HumanMessage(content="how many garages are there in the table?"))
+    async for event in manager.stream_events_for_table("housing"):
+        # print(event["event"])
+        if event["event"] == "on_chat_model_end":
+            print(event["data"]["output"])
+            pass
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

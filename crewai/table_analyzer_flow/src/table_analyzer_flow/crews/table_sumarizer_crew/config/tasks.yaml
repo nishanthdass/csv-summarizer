@@ -1,31 +1,3 @@
-# summarize_unordered_json:
-#   description: >
-#     Use the `JSONSearchTool` with `{key_to_list_json}`
-#     - Summarize the data, identifying data types, general purposes, and commonalities across columns without referencing specific values.
-#     - Focus on descriptive terms such as "frequent," "common," "often," and "typically," avoiding specific examples or numbers.
-#     - Insights should be based on general characteristics and disregard the order of values within arrays.
-#   expected_output: >
-#     A JSON containing generalized summaries for each column. Each key should represent a table column and contain:
-#     - "summary": A concise, generalized summary of the column's data.
-#     - "insights": Optional additional generalized insights about common patterns.
-#     - Make sure to use double quotes around all keys and values.
-#   agent: json_summarizer
-
-# summarize_ordered_json:
-#   description: >
-#     Using `JSONSearchTool` with `{index_to_row_json}` as input help to generate insights:
-#     - Generate high-level insights by examining relationships, dependencies, and correlations between columns, emphasizing general patterns and structural observations.
-#     - Each key in {index_to_row_json} represents a row with sub-keys as column names and values.
-#     - Focus on identifying patterns, dependencies, or correlations without referencing specific values.
-#     - Use terms like "generally," "often," and "typically" to describe relationships while avoiding unique data points.
-#     - If providing insights, make sure to reinforce that data sample is is not representative of the whole dataset.
-#     - Finally add the created insights to the JSON output from `summarize_unordered_json`.
-#   expected_output: >
-#     A Python dictionary containing Summaries and Insights for each column. Each key should represent a table column and contain:
-#     - "summary": A high-level summary of the column data without specific values.
-#     - "insights": High-level insights on column relationships and patterns.
-#     - Make sure to use double quotes around all keys and values.
-#   agent: json_summarizer
 
 
 summarize_unordered_json:
@@ -36,7 +8,7 @@ summarize_unordered_json:
     - Focus on descriptive terms such as "frequent," "common," "often," and "typically," avoiding specific examples or numbers.
     - Insights should be based on general characteristics and disregard the order of values within arrays.
   expected_output: >
-    A JSON containing generalized summaries for each column. Each key should represent a table column and contain:
+    A Python dictionary where each key represents a table column and values per key are:
     - "summary": A concise, generalized summary of the column's data.
     - "insights": Optional additional generalized insights about common patterns.
     - Make sure to use double quotes around all keys and values.
@@ -44,20 +16,18 @@ summarize_unordered_json:
 
 summarize_ordered_json:
   description: >
-    Look through the data `{index_to_row_json}` as input help to generate insights:
-    - Generate high-level insights by examining relationships, dependencies, and correlations between columns, emphasizing general patterns and structural observations.
-    - Each key in {index_to_row_json} represents a row with sub-keys as column names and values.
+    Look through the data `{index_to_row_json}` as input help to generate insights. Each key in {index_to_row_json} represents a row with sub-keys as column names and values.
+    - Generate high-level insights for each column by examining relationships, dependencies, and correlations between columns, emphasizing general patterns and structural observations.
     - If providing insights, make sure to reinforce that data sample is is not representative of the whole dataset.
     - Focus on identifying patterns, dependencies, or correlations without referencing specific values.
     - Use terms like "generally," "often," and "typically" to describe relationships while avoiding unique data points.
-    - Finally add the created insights to the JSON output from `summarize_unordered_json`.
+    - Finally add each columns insights to the output of `summarize_unordered_json`.
   expected_output: >
-    A Python dictionary containing Summaries and Insights for each column. Each key should represent a table column and contain:
+    A Python dictionary where each key represents a table column and values per key are:
     - "summary": A high-level summary of the column data without specific values.
     - "insights": High-level insights on column relationships and patterns.
     - Make sure to use double quotes around all keys and values.
   agent: json_summarizer
-
 
 
 respond_results:

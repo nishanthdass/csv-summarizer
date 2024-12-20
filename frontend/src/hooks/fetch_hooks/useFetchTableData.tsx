@@ -1,8 +1,7 @@
 import { useState, useCallback } from 'react';
-import { TableData } from '../../utilities/types';
+import { TableData } from '../../utilities/TableEntity';
 
 export const useFetchTableData = () => {
-  const [tableData, setTableData] = useState<TableData | null>(null);
 
   const fetchTableData = useCallback(async (tableName: string, page: number, pageSize: number): Promise<TableData> => {
     try {
@@ -24,5 +23,5 @@ export const useFetchTableData = () => {
     }
   }, []);
 
-  return { tableData, fetchTableData };
+  return { fetchTableData };
 };

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any
 from pydantic import BaseModel
@@ -9,6 +9,8 @@ import os
 from dotenv import load_dotenv
 import json
 import httpx
+from table_summarizer_flow import TableSummarizerCrewFlow
+from routes import router
 
 os.environ['OTEL_SDK_DISABLED'] = 'true'
 
@@ -34,146 +36,9 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-class TableData(BaseModel):
-    table_name: str
-    random_values_json: Dict[str, List[str]]
-    ordered_values_json: Dict[int, Dict[str, str]]
+app.include_router(router, prefix="/tables", tags=["Tables"])
 
-table_analysis: Dict[str, Dict[str, Any]] = {}
+for route in app.routes:
+    print(f"Path: {route.path}, Name: {route.name}, Methods: {route.methods}")
 
-@app.get("/tables/{table_name}/{task_id}/state")
-async def get_flow_state(table_name: str, task_id: str):
-    if table_name not in table_analysis or task_id not in table_analysis[table_name]:
-        raise HTTPException(status_code=404, detail="Flow not found.")
-
-    flow_entry = table_analysis[table_name][task_id]
-    return {
-        "state": flow_entry["flow"].state.dict() if flow_entry["flow"] else {},
-        "status": flow_entry["status"],
-        "result": flow_entry["result"],
-    }
-
-
-@app.get("/tables/{table_name}/{task_id}/result")
-async def get_result(table_name: str, task_id: str):
-    if table_name not in table_analysis or task_id not in table_analysis[table_name]:
-        raise HTTPException(status_code=404, detail="Task not found.")
-
-    flow_entry = table_analysis[table_name][task_id]
-    if flow_entry["result"]:
-        return {"result": flow_entry["result"]}
-    return {"result": "Analysis not complete or file not found"}
-
-
-@app.post("/tables/{table_name}/analyze")
-async def analyze_table(table_name_data: Dict, background_tasks: BackgroundTasks):
-    task_id = table_name_data["task_id"]
-    table_name = table_name_data["table_name"]
-    keys_to_list_json = table_name_data["random_values_json"]
-    index_to_row_json = table_name_data["ordered_values_json"]
-
-    if table_name not in table_analysis:
-        table_analysis[table_name] = {}
-
-    if task_id in table_analysis[table_name]:
-        return {"message": f"Task {task_id} already exists for table {table_name}"}
-
-    table_analysis[table_name][task_id] = {
-        "status": "In Progress",
-        "result": None,
-        "flow": None,
-    }
-    background_tasks.add_task(run_table_analysis, task_id, keys_to_list_json, index_to_row_json, table_name)
-
-    return {"message": f"Task {task_id} started for table {table_name}"}
-
-
-@app.post("/tables/{table_name}/{task_id}/retry")
-async def retry_analysis(table_name: str, task_id: str, background_tasks: BackgroundTasks):
-    if table_name not in table_analysis or task_id not in table_analysis[table_name]:
-        raise HTTPException(status_code=404, detail="Task not found.")
-
-    flow_entry = table_analysis[table_name][task_id]
-    flow_entry["status"] = "Retrying"
-    background_tasks.add_task(
-        run_table_analysis,
-        task_id,
-        flow_entry["flow"].state.key_to_list_json,
-        flow_entry["flow"].state.index_to_row_json,
-        table_name,
-    )
-
-    return {"message": f"Retry triggered for task {task_id} on table {table_name}"}
-
-
-async def run_table_analysis(task_id: str, key_to_list_json: Dict[str, List[str]], index_to_row_json: Dict[int, Dict[str, str]], table_name: str):
-    if table_analysis[table_name][task_id]["flow"] is not None:
-        print(f"Resuming analysis for table {table_name}_{task_id}...")
-        flow_entry = table_analysis[table_name][task_id]
-    else:
-        flow = TableSummarizerCrewFlow(table_name)
-        
-        table_analysis[table_name][task_id] = {
-            "flow": flow,
-            "status": "In Progress",
-            "result": None,
-        }
-        flow_entry = table_analysis[table_name][task_id]
-
-    try:
-        inputs = {
-            "key_to_list_json": key_to_list_json,
-            "index_to_row_json": index_to_row_json,
-            "table_name": table_name,
-            "summary_table_name": f"{table_name}_summary",
-        }
-        print(f"Starting analysis for table {table_name}_{task_id}...")
-        print(flow_entry)
-        result = await flow_entry["flow"].summarize_columns_from_json(inputs)
-        flow_entry["result"] = result
-        flow_entry["status"] = "Completed"
-        await send_results_to_backend(table_name, {"task_id": task_id, "status": "Completed", "result": result.raw})
-    except Exception as e:
-        flow_entry["status"] = "Failed"
-        flow_entry["result"] = str(e)
-        print(f"An error occurred for table {table_name}_{task_id}: {e}")
-        await send_results_to_backend(table_name, {"task_id": task_id, "status": "Failed", "result": str(e)})
-
-
-async def send_results_to_backend(table_name: str, result: Dict):
-    try:
-        url = f"http://127.0.0.1:8000/results/{table_name}"
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=result)
-        print(f"Result sent to backend for table {table_name}: {response.status_code}")
-    except Exception as e:
-        print(f"Failed to send results to backend: {e}")
-
-
-class TableSummarizerCrewState(BaseModel):
-    """State for TableSummarizerCrewFlow"""
-    table_name: str = ""
-
-
-class TableSummarizerCrewFlow(Flow[TableSummarizerCrewState]):
-    def __init__(self, table_name: str):
-        super().__init__()
-        self.table_name = table_name
-
-    @start()
-    async def summarize_columns_from_json(self, inputs: Dict[str, Any]):
-        try:
-            self.state.table_name = self.table_name
-
-            # Initialize the crew dynamically
-            print("Initializing summarize_columns_from_json...")
-            crew_instance = TableSummarizerCrew(table_name=self.table_name)
-
-            # Use the crew instance to kickoff the summarizer agent
-            result = await crew_instance.json_summarizer_agent().kickoff_async(inputs=inputs)
-
-            return result
-        except Exception as e:
-            print("Error:", str(e))
-            raise
 

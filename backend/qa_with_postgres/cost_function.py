@@ -1,149 +1,85 @@
-# import numpy as np
+import pandas as pd
+import os
 
-# from sklearn.model_selection import train_test_split
+HOUSING_PATH = os.path.join("datasets", "housing")
+
+
+def load_housing_data(housing_path=HOUSING_PATH):
+    csv_path = os.path.join(housing_path, "housing.csv")
+    return pd.read_csv(csv_path)
+
+df = load_housing_data()
+
+# print(df.head())
+
+# print(df.info())
+
+# # Sort the "median_income" column in ascending order
+# sorted_income = df["median_income"].sort_values()
+
+# print(sorted_income)
+
+
+# print(df.describe())
+
 # import matplotlib.pyplot as plt
-# import pandas as pd
-# from sqlalchemy import create_engine
-# import os
-# from dotenv import load_dotenv
-# from lab_utils_uni import plt_intuition, plt_stationary, plt_update_onclick, soup_bowl
-# plt.style.use('./deeplearning.mplstyle')
-# from sklearn.preprocessing import MinMaxScaler
+# df.hist(bins=50, figsize=(20,15))
+# plt.show()
 
-# scaler = MinMaxScaler()
+
+from sklearn.model_selection import train_test_split
+import numpy as np
 
 
 
-# # Load environment variables
-# load_dotenv()
-
-# # Database connection setup
-# DB_USER = os.getenv('POSTGRES_USER')
-# DB_PASSWORD = os.getenv('POSTGRES_PASSWORD')
-# DB_NAME = os.getenv('POSTGRES_DB')
-# DB_HOST = os.getenv('POSTGRES_HOST')
-# DB_PORT = os.getenv('POSTGRES_PORT')
-
-# db_url = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-# # Load data from the SQL table
-# def create_dataframe_from_sql(table_name: str, db_url: str):
-#     engine = create_engine(db_url)
-#     df = pd.read_sql(f"SELECT * FROM {table_name}", con=engine)
-#     return df
-
-# try:
-#     df = create_dataframe_from_sql('housing', db_url)
-# except Exception as e:
-#     print(f"Error loading data: {e}")
-#     exit()
-
-# # outlier treatment for price
-# plt.boxplot(df.price)
-# Q1 = df.price.quantile(0.25)
-# Q3 = df.price.quantile(0.75)
-# IQR = Q3 - Q1
-# housing = df[(df.price >= Q1 - 1.5*IQR) & (df.price <= Q3 + 1.5*IQR)]
-
-# # outlier treatment for area
-# plt.boxplot(df.area)
-# Q1 = df.area.quantile(0.25)
-# Q3 = df.area.quantile(0.75)
-# IQR = Q3 - Q1
-# df = df[(df.area >= Q1 - 1.5*IQR) & (df.area <= Q3 + 1.5*IQR)]
-
-# df_train, df_test = train_test_split(df, train_size = 0.7, test_size = 0.3, random_state = 100)
-
-# num_vars = ["area", "price"]
-
-# df_train[num_vars] = scaler.fit_transform(df_train[num_vars])
-
-# y_train = df_train.pop('price')
-# x_train = df_train.pop('area')
-# print("area: ",x_train)
-
-# x_train = x_train.to_numpy()
-# y_train = y_train.to_numpy()
-
-
-# def compute_cost(x, y, w, b): 
-#     """
-#     Computes the cost function for linear regression.
-    
-#     Args:
-#       x (ndarray (m,)): Data, m examples 
-#       y (ndarray (m,)): target values
-#       w,b (scalar)    : model parameters  
-    
-#     Returns
-#         total_cost (float): The cost of using w,b as the parameters for linear regression
-#                to fit the data points in x and y
-#     """
-#     # number of training examples
-#     m = x.shape[0] 
-    
-#     cost_sum = 0 
-#     for i in range(m): 
-#         f_wb = w * x[i] + b   
-#         cost = (f_wb - y[i]) ** 2  
-#         cost_sum = cost_sum + cost  
-#     total_cost = (1 / (2 * m)) * cost_sum  
-
-#     return total_cost
-
-
-
-
-# plt_intuition(x_train,y_train)
-
-# plt.close('all') 
-# fig, ax, dyn_items = plt_stationary(x_train, y_train)
-# updater = plt_update_onclick(fig, ax, x_train, y_train, dyn_items)
-# soup_bowl(updater)
-
-
-
-
-
-# -------------------------------------------------------------------------------------------------------------------------------------------- #
+df["income_cat"] = pd.cut(df["median_income"], bins=[0., 1.5, 3.0, 4.5, 6., np.inf], labels=[1, 2, 3, 4, 5])
 
 
 import matplotlib.pyplot as plt
-import numpy as np
+# df["income_cat"].hist(bins=50, figsize=(20,15))
+# plt.show()
 
-# original data set
-X = [1, 2, 3]
-y = [1, 2.5, 3.5]
+from sklearn.model_selection import StratifiedShuffleSplit
+split = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+for train_index, test_index in split.split(df, df["income_cat"]):
+    strat_train_set = df.loc[train_index]
+    strat_test_set = df.loc[test_index]
 
-# slope of best_fit_1 is 0.5
-# slope of best_fit_2 is 1.0
-# slope of best_fit_3 is 1.5
+# extra code – computes the data for Figure 2–10
 
-hyps = [0.5, 1.0, 1.5] 
+def income_cat_proportions(data):
+    return data["income_cat"].value_counts() / len(data)
 
-# mutiply the original X values by the theta 
-# to produce hypothesis values for each X
-def multiply_matrix(mat, theta):
-    mutated = []
-    for i in range(len(mat)):
-        mutated.append(mat[i] * theta)
 
-    return mutated
 
-# calculate cost by looping each sample
-# subtract hyp(x) from y
-# square the result
-# sum them all together
-def calc_cost(m, X, y):
-    total = 0
-    for i in range(m):
-        squared_error = (y[i] - X[i]) ** 2
-        total += squared_error
-    
-    return total * (1 / (2*m))
+train_set, test_set = train_test_split(df, test_size=0.2, random_state=42)
 
-# calculate cost for each hypothesis
-for i in range(len(hyps)):
-    hyp_values = multiply_matrix(X, hyps[i])
+compare_props = pd.DataFrame({
+    "Overall %": income_cat_proportions(df),
+    "Random %": income_cat_proportions(test_set),
+    "Stratified %":  strat_test_set["income_cat"].value_counts() / len(strat_test_set),
+}).sort_index()
+compare_props.index.name = "Income Category"
+compare_props["Rand. Error %"] = (compare_props["Random %"] /
+                                  compare_props["Overall %"] - 1) * 100
+compare_props["Strat. Error %"] = (compare_props["Stratified %"] /
+                                   compare_props["Overall %"] - 1) * 100
 
-    print("Cost for ", hyps[i], " is ", calc_cost(len(X), y, hyp_values))
+
+print((compare_props))
+
+for set_ in (strat_train_set, strat_test_set):
+ set_.drop("income_cat", axis=1, inplace=True)
+
+
+housing = strat_train_set.copy()
+
+print(housing.info())
+
+from pandas.plotting import scatter_matrix
+# attributes = ["median_house_value", "median_income", "total_rooms", "housing_median_age"]
+# scatter_matrix(housing[attributes], figsize=(12, 8))
+
+housing.plot(kind="scatter", x="median_income", y="median_house_value", alpha=0.1)
+
+plt.show()

@@ -510,40 +510,6 @@ async def main():
         
 
 
-            # if not is_interrupted:
-            #     # print("Not Interrupted: ")
-            #     async for event in app.astream_events(state, config, version="v2"):
-            #         if event["event"] == "on_chat_model_stream":
-            #             word_buffer, word_state, str_response, char_backlog = process_stream_event(
-            #                 event, words_to_find, word_buffer, word_state, str_response, char_backlog
-            #             )
-
-            #         if event["event"] == "on_chain_end":
-            #             if "output" in event['data']:
-            #                 if type(event['data']['output']) == dict and 'next_agent' in event['data']['output']:
-            #                     if event['data']['output']['next_agent'] == "__end__":
-            #                         while_loop = False
-            #                         break
-
-            #         interrupts = app.get_state(config)
-            #         if len(interrupts.tasks) > 0 and interrupts.tasks[0].interrupts:
-            #             is_interrupted = True
-            #             # print("Event: Interrupted: ", event)
-            #             break
-
-
-            # if is_interrupted:
-            #     # print("Interrupted: ")
-            #     message = input("Enter a message during interruption: ")
-            #     interrupts = app.get_state(config)
-            #     is_interrupted = False
-            #     # await app.ainvoke(Command(resume=message), config)
-            #     async for event in app.astream_events(Command(resume=message), config, version="v2"):
-            #         if event["event"] == "on_chat_model_stream":
-            #             word_buffer, word_state, str_response, char_backlog = process_stream_event(
-            #                 event, words_to_find, word_buffer, word_state, str_response, char_backlog
-            #             )
-
     
 if __name__ == "__main__":
     asyncio.run(main())

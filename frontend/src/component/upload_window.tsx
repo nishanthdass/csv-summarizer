@@ -1,13 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { useDataContext } from '../context/useDataContext';
-import { useTableUploadSelect } from '../hooks/useTableUploadSelect';
+import { useFileSidePanelOperations } from '../hooks/useFileSidePanelOperations';
 
 
 const UploadWindow: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { addTableToDatabase, loadTablesFromDatabase } = useTableUploadSelect();
+  const { addFileToDatabase, loadTablesFromDatabase, loadPdfsFromDatabase } = useFileSidePanelOperations();
 
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,9 +28,12 @@ const UploadWindow: React.FC = () => {
     if (!file) return;
 
     try {
-      await addTableToDatabase(file);
+
+      await addFileToDatabase(file);
       await loadTablesFromDatabase();
+      await loadPdfsFromDatabase();
       resetFileInput();
+
     } catch (error) {
       setErrorMsg('Error uploading file');
     }
@@ -42,7 +44,7 @@ const UploadWindow: React.FC = () => {
       <div className="upload-section-input">
         <input
           type="file"
-          accept=".csv"
+          accept=".csv,.pdf"
           onChange={handleFileUpload}
           ref={fileInputRef}
         />

@@ -144,7 +144,6 @@ async def create_summary_table(conn, table_name, columns, repacked_rows, row_num
             assistant_id VARCHAR(255),      -- New column for storing assistant_id
             vector_store_id VARCHAR(255),    -- New column for storing vector_store_id
             thread_id VARCHAR(255)         -- New column for storing thread_id
-
         );
     """)
 
@@ -321,7 +320,7 @@ def get_table_data(table_name: str, page: int, page_size: int):
     return table_data  # Return table object with columns and rows
 
 
-def ingest_file(file_path: str, table_name: str):
+def ingest_csv(file_path: str, table_name: str):
     """
     Ingests the CSV file into a PostgreSQL table.
     This assumes the table does not exist and needs to be created.
@@ -345,8 +344,6 @@ def ingest_file(file_path: str, table_name: str):
         clean_col = sanitize_column_name(col)
         column_definitions.append(f"{clean_col} {postgres_type}")
 
-    
-    
     create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
     create_table_query += ", ".join(column_definitions) + ");"
 
@@ -356,7 +353,7 @@ def ingest_file(file_path: str, table_name: str):
     try:
         cur.execute(create_table_query)
         conn.commit()
-        cur.execute(f"COMMENT ON TABLE {table_name} IS 'frontend table';")
+        cur.execute(f"COMMENT ON TABLE {table_name} IS 'source_type: csv';")
         conn.commit()
     except Exception as e:
         print(f"Error creating table {table_name}: {str(e)}")
@@ -377,6 +374,51 @@ def ingest_file(file_path: str, table_name: str):
 
     cur.close()
     conn.close()
+
+
+    
+def ingest_pdf(file_path: str, pdf_name: str):
+    """
+    Ingests a PDF file's path into a PostgreSQL table as TEXT.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Sanitize table name
+    sanitized_table_name = pdf_name.replace('-', '_').replace(' ', '_').lower()
+
+    # Create the table with a TEXT column for storing the file path
+    create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {sanitized_table_name} (
+            id SERIAL PRIMARY KEY,
+            pdf_file_path TEXT
+        );
+    """
+
+    try:
+        # Create table
+        cur.execute(create_table_query)
+        conn.commit()
+
+        # Add metadata to the table
+        cur.execute(f"COMMENT ON TABLE {sanitized_table_name} IS 'source_type: pdf';")
+        conn.commit()
+
+        # Insert the file path into the table
+        insert_query = f"""
+            INSERT INTO {sanitized_table_name} (pdf_file_path) 
+            VALUES (%s);
+        """
+        cur.execute(insert_query, (file_path,))
+        conn.commit()
+
+        print(f"PDF file '{file_path}' successfully ingested into table '{sanitized_table_name}'.")
+    except Exception as e:
+        print(f"Error ingesting PDF data into table {sanitized_table_name}: {str(e)}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
 
 def sanitize_column_name(col_name: str) -> str:
     return re.sub(r'\W+', '_', col_name).lower()

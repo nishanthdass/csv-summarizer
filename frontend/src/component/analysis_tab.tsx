@@ -9,7 +9,6 @@ const { currentTable } = useDataContext();
 const { tasks } = useTasks();
 
 const { isConnected, sendMessage, messages } = useChatWebSocket();
-// const [messages, setMessages] = useState<Message[]>([]);
 const [input, setInput] = useState('');
 const [animatedDots, setAnimatedDots] = useState('');
 
@@ -21,6 +20,10 @@ const isLoading = tasksForCurrentTable.some(
     (task) => task.status !== 'Completed' && task.status !== 'Failed'
   );
 
+
+useEffect(() => {
+    console.log("Messages updated:", messages);
+}, [messages]);
 
 
 const handleSend = () => {
@@ -57,7 +60,7 @@ return (
                 <strong>{message.role}:</strong>{" "}
                 <ReactMarkdown
                 components={{
-                    p: ({ children }) => <span>{children}</span>, // Render paragraphs as spans
+                    p: ({ children }) => <span>{children}</span>,
                 }}
                 >
                 {message.message == "" ? animatedDots : message.message}

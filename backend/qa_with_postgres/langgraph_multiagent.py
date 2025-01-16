@@ -1,9 +1,7 @@
 import os
 import uuid
 import asyncio
-import random
-import json
-import emoji
+from fastapi import WebSocket
 from typing import Sequence, Dict, List, Optional
 from typing_extensions import Annotated, TypedDict
 from langchain_community.utilities import SQLDatabase
@@ -14,18 +12,15 @@ from langgraph.graph import START, StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import  trim_messages
-from langchain_core.tools import tool
-from langchain_core.output_parsers import JsonOutputParser, BaseOutputParser
+from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain.agents.format_scratchpad.openai_tools import (format_to_openai_tool_messages)
 from langgraph.types import interrupt, Command
-from langchain_openai import OpenAIEmbeddings
-from langchain_postgres import PGVector
-from langchain_postgres.vectorstores import PGVector
-from langchain_core.runnables import RunnableConfig
+import logging
+from rich import print as rprint
 
 load_dotenv()
 
@@ -56,24 +51,8 @@ os.environ["LANGCHAIN_TRACING_V2"] = "true"
 
 # Initialize model and embedding model
 model = ChatOpenAI(model="gpt-4o", temperature=0)
-embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
 
-# Initialize vector store and retriever
-vector_store = PGVector(
-    embeddings=embeddings,
-    collection_name=collection_name,
-    connection=db_url,
-    use_jsonb=True,
-)
-retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-
-
-# Define schemas and tools
-
-@tool
-async def retreive_pgvector(query: str) -> int:
-    """Retrieves the pgvector for a given query."""
-    return await retriever.invoke(query)
+tasks = {}
 
 # Define trimmer for message storage
 trimmer = trim_messages(
@@ -151,7 +130,11 @@ async def supervisor_node(state: MessageState) -> MessageState:
         "conversation_history": conversation_history
     }
 
-    response = await chain.ainvoke(inputs)
+    try:
+        response = await chain.ainvoke(inputs)
+    except Exception as e:
+        logging.error(f"Error invoking chain: {e}")
+        response = None
 
     state["messages"].append(AIMessage(content=response["answer"]))
     state["answer"] = AIMessage(content=response["answer"])
@@ -258,8 +241,7 @@ async def data_analyst_node(state: MessageState) -> MessageState:
 
     chain = prompt | model | parser
     parsed_result = await chain.ainvoke(inputs)
-    print("processed")
-    print("parsed_result: ", parsed_result)
+
 
     if parsed_result["question"] != "":
         state["messages"].append(AIMessage(content=f"{parsed_result["question"]}"))
@@ -328,7 +310,7 @@ class ChatbotManager:
 
     async def create_chatbot(self, table_name: str, language: str):
         if table_name in self.chatbots:
-            raise ValueError(f"Chatbot for table '{table_name}' already exists.")
+            return
 
         db_for_table = SQLDatabase.from_uri(db_url, include_tables=[table_name])
         toolkit = SQLDatabaseToolkit(db=db_for_table, llm=model)
@@ -336,8 +318,6 @@ class ChatbotManager:
         sql_agent_for_table = create_sql_agent(llm=model, toolkit=toolkit, agent_type="openai-tools", verbose=False, agent_executor_kwargs={"return_intermediate_steps": True})
 
         thread_uuid = uuid.uuid4()
-        parent_run_uuid = uuid.uuid4()
-        run_uuid = uuid.uuid4()
         config = {"configurable": {"thread_id": f"{thread_uuid}"}, "recursion_limit": 100}
         self.chatbots[table_name] = {
             "language": language,
@@ -376,7 +356,7 @@ def find_word_in_text( word, words_to_find, word_buffer):
 
 def update_word_state(find_word, words_to_find, word_buffer, word_state):
     """Update the word state based on the matched word."""
-    if find_word in ["<_START_>", "```sql"]:
+    if find_word in ["<_START_>", "```sql", " ```sql"]:
         return True, ""
     elif find_word in ["<_", "```"] and word_state and word_buffer:
         return False, word_buffer
@@ -428,88 +408,126 @@ def process_stream_event(event, words_to_find, word_buffer, word_state, str_resp
         str_response, char_backlog = process_response(word, str_response, char_backlog)
     else:
         str_response = []
-
-    # Handle finish reason
+        
     word_state, char_backlog = handle_finish_reason(event, word_state, char_backlog)
 
     return word_buffer, word_state, str_response, char_backlog
 
 
-async def main():
 
-    await manager.create_chatbot("housing", "English")
-    chatbot = await manager.get_chatbot("housing")
+async def start_chatbot(table_name: str):
+    await manager.create_chatbot(table_name, "English")
 
-    config = chatbot["config"]
+async def start_chatbot_in_background(table_name: str, websocket: WebSocket):
+    print(f"Starting chatbot for table: {table_name}")
 
+    # If a task for this table already exists, cancel it before starting a new one
+    if table_name in tasks and not tasks[table_name].done():
+        tasks[table_name].cancel()
+        try:
+            await tasks[table_name]
+        except asyncio.CancelledError:
+            print(f"Previous task for table {table_name} cancelled")
 
-    while True:
-        
-        message = input("Enter a message: ")
-
-        state = {
-            "current_agent": None,
-            "next_agent": "supervisor",
-            "question": HumanMessage(content=message),
-            "answer": None,
-            "table_name": "housing",
-            "messages": [HumanMessage(content=message)],
-            "agent_scratchpads": []
-        }
-
-        
-
-        is_interrupted = False
-        while_loop = True
-        
-        words_to_find = ['<_START_>', '```sql', '<_', '```']
-        word_buffer = ""
-        word_state = False
-        str_response = []
-        char_backlog = []
-
-        context = {
-        'word_buffer': "",
-        'word_state': False,
-        'str_response': [],
-        'char_backlog': [],
-        'words_to_find': ['<_START_>', '```sql', '<_', '```']
-        }
-
-        input_arg = state
-        
-
-        while while_loop:
-            if is_interrupted:
-                print("Interrupted: ", len(interrupts.tasks))
-                message = input("Enter a message during interruption: ")
-                input_arg = Command(resume=message)
-
-            async for event in app.astream_events(input_arg, config, version="v2"):
-                if event["event"] == "on_chain_error":
-                    print("Error: ", event["data"])
-                if event["event"] == "on_chat_model_stream":
-                    word_buffer, word_state, str_response, char_backlog = process_stream_event(
-                        event, words_to_find, word_buffer, word_state, str_response, char_backlog
-                    )
-
-                if event["event"] == "on_chain_end" and not is_interrupted:
-                    if "output" in event['data']:
-                        if type(event['data']['output']) == dict and 'next_agent' in event['data']['output']:
-                            if event['data']['output']['next_agent'] == "__end__":
-                                while_loop = False
-                                break
-
-                interrupts = app.get_state(config)
-                if len(interrupts.tasks) > 0 and interrupts.tasks[0].interrupts and not is_interrupted:
-                    print("Event: Interrupted: ", interrupts.tasks[0].interrupts)
-                    is_interrupted = True
-                    break
-                elif len(interrupts.tasks) == 0 and is_interrupted:
-                    is_interrupted = False
-        
-
+    # Create a new task and store it
+    task = asyncio.create_task(run_chatbots(table_name, websocket))
+    tasks[table_name] = task
 
     
-if __name__ == "__main__":
-    asyncio.run(main())
+message_queue = asyncio.Queue()
+
+async def run_chatbots( table_name: str, websocket: WebSocket ):
+    chatbot = await manager.get_chatbot(table_name)
+    config = chatbot["config"]
+
+    while True:   
+        try:
+            # Wait for a new message (blocking until available)
+            rprint("Waiting for a new message...")
+            message = await message_queue.get()
+            logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
+
+            state = {
+                "current_agent": None,
+                "next_agent": "supervisor",
+                "question": HumanMessage(content=message),
+                "answer": None,
+                "table_name": table_name,
+                "messages": [HumanMessage(content=message)],
+                "agent_scratchpads": []
+            }
+
+            is_interrupted = False
+            while_loop = True
+            cur_agent = None
+        
+            words_to_find = ['<_START_>', '```sql', '<_', '```']
+            word_buffer = ""
+            word_state = False
+            str_response = []
+            char_backlog = []
+
+            input_arg = state
+        
+
+            while while_loop:
+                if is_interrupted:
+                    print("Interrupted: ", len(interrupts.tasks))
+                    message = await message_queue.get()
+                    logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
+                    input_arg = Command(resume=message)
+
+                async for event in app.astream_events(input_arg, config, version="v2"):
+                    if event.get("event") == "on_chain_start":
+                        data = event.get("data", {})
+                        
+                        if isinstance(data, dict) and "input" in data:
+                            input_data = data["input"]
+                            
+                            if isinstance(input_data, dict) and "next_agent" in input_data:
+                                next_agent = input_data["next_agent"]
+                                
+                                if cur_agent != next_agent:
+                                    cur_agent = next_agent
+                                    await websocket.send_json({
+                                        "event": "on_chain_start",
+                                        "message": "",
+                                        "table_name": table_name,
+                                        "role": next_agent
+                                    })
+
+                    if event["event"] == "on_chain_error":
+                        print("Error: ", event["data"])
+                    if event["event"] == "on_chat_model_stream":
+                        prev_char_backlog = char_backlog.copy()
+                        word_buffer, word_state, str_response, char_backlog = process_stream_event(
+                            event, words_to_find, word_buffer, word_state, str_response, char_backlog
+                        )
+                        if word_state and len(str_response) > 0 and prev_char_backlog == char_backlog:
+                            await websocket.send_json({"event": "on_chat_model_stream", "message": word_buffer, "table_name": table_name, "role": event['metadata']['langgraph_node']})
+
+                    if event["event"] == "on_chain_end" and not is_interrupted:
+                        if "output" in event['data']:
+
+                            if type(event['data']['output']) == dict and 'next_agent' in event['data']['output']:
+                                if event['data']['output']['next_agent'] == "__end__":
+                                    while_loop = False
+                                    break
+
+                    interrupts = app.get_state(config)
+
+                    if len(interrupts.tasks) > 0 and interrupts.tasks[0].interrupts and not is_interrupted:
+                        print("Event: Interrupted: ", interrupts.tasks[0].interrupts)
+                        is_interrupted = True
+                        break
+                    elif len(interrupts.tasks) == 0 and is_interrupted:
+                        is_interrupted = False
+
+        except Exception as e:
+            logging.error(f"Error in chatbot processing: {e}")
+            break
+        finally:
+            if table_name in tasks:
+                del tasks[table_name]  # Remove task reference
+                print(f"Task for table {table_name} removed")
+            

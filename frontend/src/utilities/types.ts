@@ -11,3 +11,4 @@ export interface Task {
   status: string;
   result?: any;
 }
+

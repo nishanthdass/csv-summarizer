@@ -1,4 +1,4 @@
-import { add, set } from "lodash";
+import { add } from "lodash";
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 
 interface Message {
@@ -69,15 +69,13 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         const parsedData = JSON.parse(event.data);
         // console.log("WebSocket message received:", parsedData, typeof parsedData, typeof event.data);
         const message = formatIncomingMessage(parsedData);
-        if (message.event === "created") {
-          buildOnLastMessage(message);
+
+        if (message.event === "on_chain_start") {
+          addNewMessage(message);
         }
 
-        if (message.event === "delta") {
+        if (message.event === "on_chat_model_stream") {
           buildOnLastMessage(message);
-        }
-        
-        if (message.event === "complete") {
         }
         
       } catch (error) {
@@ -106,10 +104,6 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
     
     addNewMessage(formattedUserMessage);
 
-    const formattedChatbotMessage = formatOutgoingMessage("assistant", table_name, "", "request");
-
-    addNewMessage(formattedChatbotMessage);
-
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify(formattedUserMessage));
     } else {
@@ -135,7 +129,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       const lastMessage = updatedMessages[updatedMessages.length - 1];
       updatedMessages[updatedMessages.length - 1] = {
         ...lastMessage,
-        message: lastMessage.message + deltaMessage.message,
+        message: deltaMessage.message,
       };
   
       return updatedMessages;

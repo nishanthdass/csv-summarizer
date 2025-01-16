@@ -29,6 +29,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ table }) => {
             });
 
             const data = await response.json(); // Parse the JSON response
+            console.log(data.response);
             // Append chatbot's response to the chat window
             setMessages(prevMessages => [...prevMessages, { sender: 'ChatBot', text: data.response }]);
         } catch (error) {

@@ -2,11 +2,11 @@ import React, { useState, useRef, useCallback } from 'react';
 
 // Components
 import UploadWindow from './component/upload_window';
-import SelectWindow from './component/select_window';
+import SelectCsvWindow from './component/select_csv_window';
+import SelectPdfWindow from './component/select_pdf_window';
 import TenstackTable from './component/tanstack_table';
 import Pagination from './component/pagination';
 import AnalysisTab from './component/analysis_tab';
-// import Chatbot from './component/chatbot';
 import AboutProject from './component/about_project';
 
 // hooks
@@ -23,6 +23,7 @@ import databaseTableIcon from './assets/folder.png';
 import chatBotIcon from './assets/chatbotA.png';
 import graphIcon from './assets/curve.png';
 import sidepanelIcon from './assets/hide.png';
+
 
 
 function App() {
@@ -54,9 +55,14 @@ function AppContent() {
 
   // Table visibility
   const [showTable, setShowTable] = useState<boolean>(false);
+  const [showPdf, setShowPdf] = useState<boolean>(false);
 
   const toggleTableVisibility = () => {
     setShowTable((prev) => !prev);
+  };
+
+  const togglePdfVisibility = () => {
+    setShowPdf((prev) => !prev);
   };
 
   const isEnabled = currentTable !== null;
@@ -70,18 +76,22 @@ function AppContent() {
         {selectedSidebarContent === 'table' && (
           <div className="sidebar-tables" ref={sidebarContentRef}>
             <div className="upload-section">
-              <h2>Upload CSV File</h2>
+              <h2>Upload CSV & PDF Files</h2>
                 <UploadWindow />
             </div>
             <div className="load-csv-section">
               <h2>Select CSV File</h2>
-                <SelectWindow setShowTable={setShowTable}/>
+                <SelectCsvWindow setShowTable={setShowTable}/>
+            </div>
+            <div className="load-csv-section">
+              <h2>Select PDF File</h2>
+                <SelectPdfWindow setShowPdf={setShowPdf}/>
             </div>
           </div>
         )}
         {selectedSidebarContent === 'graph' && (
           <div className="sidebar-graph" ref={sidebarContentRef}>
-            <h2>Insights and Analysis</h2>
+            <h2>Chatbot</h2>
             <AnalysisTab />
           </div>
         )}

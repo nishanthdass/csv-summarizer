@@ -8,13 +8,13 @@ import zoom from '../assets/plus-small.png';
 import zoomOut from '../assets/minus-small.png';
 import resetZoom from '../assets/reset-zoom.png';
 import { useDataContext } from '../context/useDataContext';
-import { useTableUploadSelect } from '../hooks/useTableUploadSelect';
+import { useFileSidePanelOperations } from '../hooks/useFileSidePanelOperations';
 import { useUIContext } from '../context/useUIcontext';
 
 const Pagination = () => {
   const { currentTable } = useDataContext();
   const { tableZoomLevel, settableZoomLevel } = useUIContext();
-  const { loadTableFromDatabase } = useTableUploadSelect();
+  const { loadTableFromDatabase } = useFileSidePanelOperations();
 
   
   const handleZoomIn = useCallback(() => {

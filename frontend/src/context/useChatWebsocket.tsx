@@ -16,6 +16,7 @@ interface ChatWebsocketContextValue {
   input: Message[];
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  reconnect: () => void;
 }
 
 interface ChatWebsocketProviderProps {
@@ -27,9 +28,8 @@ const ChatWebsocketContext = createContext<ChatWebsocketContextValue | undefined
 
 export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ url, children }) => {
   const [isConnected, setIsConnected] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
+  const [ connectionKey, setConnectionKey] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [currentMessage, setCurrentMessage] = useState<Message | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const [isInProgress, setIsInProgress] = useState(false);
 
@@ -50,12 +50,9 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
     message,
   });
 
-  useEffect(() => {
-    console.log("Messages updated:", messages);
-  }, [messages]);
+
   
   useEffect(() => {
-    console.log("Initializing WebSocket...");
     const socket = new WebSocket(url);
     socketRef.current = socket;
 
@@ -67,7 +64,6 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
     socket.onmessage = (event) => {
       try {
         const parsedData = JSON.parse(event.data);
-        // console.log("WebSocket message received:", parsedData, typeof parsedData, typeof event.data);
         const message = formatIncomingMessage(parsedData);
 
         if (message.event === "on_chain_start") {
@@ -97,7 +93,12 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       console.log("Cleaning up WebSocket");
       socket.close();
     };
-  }, [url]);
+  }, [url, connectionKey]);
+
+  const reconnect = () => {
+    console.log("Reconnecting WebSocket...");
+    setConnectionKey((prevKey) => prevKey + 1); // Update connectionKey to re-trigger useEffect
+  };
 
   const sendMessage = (table_name: string, input: string) => {
     const formattedUserMessage = formatOutgoingMessage("User", table_name, input, "request");
@@ -119,13 +120,9 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
     setMessages((prevMessages) => {
       if (prevMessages.length === 0) {
         console.warn("No messages to update.");
-        return prevMessages; // Return the array unchanged if empty
+        return prevMessages;
       }
-  
-      // Clone the messages array
       const updatedMessages = [...prevMessages];
-  
-      // Get the last message and update its `message` part
       const lastMessage = updatedMessages[updatedMessages.length - 1];
       updatedMessages[updatedMessages.length - 1] = {
         ...lastMessage,
@@ -135,13 +132,11 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       return updatedMessages;
     });
   };
+
   
 
-
-
-
   return (
-    <ChatWebsocketContext.Provider value={{ isInProgress, setIsInProgress, isConnected, sendMessage, input: messages, messages, setMessages }}>
+    <ChatWebsocketContext.Provider value={{ isInProgress, setIsInProgress, isConnected, sendMessage, input: messages, messages, setMessages, reconnect }}>
       {children}
     </ChatWebsocketContext.Provider>
   );

@@ -8,11 +8,11 @@ import { useFetchDataDatabase } from './fetch_hooks/useFetchDataDatabase';
 
 // Task polling 
 import { useTasks } from '../context/useTaskContext';
-import { get } from 'lodash';
+import { get, set } from 'lodash';
 
 export const useFileSidePanelOperations = () => {
   // Context
-  const { tables, setTables, setCurrentTable, get_table, pdfs, setPdfs, setCurrentPdf, get_pdf} = useDataContext();
+  const { tables, setTables, setCurrentTable, get_table, pdfs, setPdfs, setCurrentPdf, get_pdf, currentPdf} = useDataContext();
 
   // Fetch functions
   const { fetchPdfData, fetchTableData, fetchPdfs, fetchTables } = useFetchDataDatabase();
@@ -94,12 +94,16 @@ export const useFileSidePanelOperations = () => {
       setPdfs((prevPdfs) => {
         const updatedPdfs = { ...prevPdfs };
   
-        pdfsFromApi.forEach((pdf: string) => {
-          if (!updatedPdfs[pdf]) {
-            updatedPdfs[pdf] = new PdfEntity(pdf);
+        pdfsFromApi.forEach((pdf_object: object) => {
+
+          const pdf_name = get(pdf_object, 'table_name');
+          const pdf_file_name = get(pdf_object, 'pdf_file_name');
+
+          if (pdf_name && pdf_file_name && !updatedPdfs[pdf_name]) {
+            updatedPdfs[pdf_name] = new PdfEntity(pdf_name, pdf_file_name); 
           }
         });
-  
+
         return updatedPdfs;
       });
   
@@ -144,23 +148,12 @@ export const useFileSidePanelOperations = () => {
   const loadPdfFromDatabase = async (
     pdfName: string
   ): Promise<void> => {
-    const table = get_pdf(pdfName);
   
     try {
-      const pdfData = await fetchPdfData(pdfName);
-  
-      setPdfs((prefPdfs) => {
-        const updatedPdf = {
-          ...prefPdfs[pdfName],
-        };
-        return {
-          ...prefPdfs,
-          [pdfName]: updatedPdf,
-        };
-      });
+      console.log("pdfName: ", pdfName);
 
     } catch (error) {
-      console.error('Error loading table:', error);
+      console.error('Error loading PDF:', error);
       throw error;
     }
   };

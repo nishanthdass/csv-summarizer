@@ -5,13 +5,19 @@ import { useFileSidePanelOperations } from '../hooks/useFileSidePanelOperations'
 
 
 const SelectPdfWindow = ({ setShowPdf } : { setShowPdf: React.Dispatch<React.SetStateAction<boolean>> }) => {
-  const { pdfs, currentPdf, setCurrentPdf } = useDataContext();
+  const { pdfs, setPdfs, currentPdf, setCurrentPdf } = useDataContext();
   const { tasks, removeTask } = useTasks();
   const { loadPdfFromDatabase, loadPdfsFromDatabase, removePdfFromDatabase } = useFileSidePanelOperations();
 
   useEffect(() => {
     loadPdfsFromDatabase();
   }, []);
+
+  // useEffect(() => {
+  //   console.log("pdfs: ", pdfs);
+  //   console.log("currentPdf: ", currentPdf);
+  // }, [pdfs, currentPdf]);
+
 
   function isLoading(name: string): boolean {
     const task = tasks.find((task) => task.table_name === name);
@@ -26,9 +32,7 @@ const SelectPdfWindow = ({ setShowPdf } : { setShowPdf: React.Dispatch<React.Set
 
 
   const handlePdfClick = async (pdfName: string) => {
-    await loadPdfFromDatabase(pdfName);
-    setCurrentPdf(pdfName);
-    setShowPdf(true)
+    setCurrentPdf(pdfs[pdfName]);
   };
 
   return (

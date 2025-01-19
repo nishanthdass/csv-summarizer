@@ -61,26 +61,25 @@ export const useFetchDataDatabase = () => {
     }
   }, []);
 
-  const fetchPdfData = useCallback(async (pdfName: string): Promise<PdfData> => {
+  const fetchPdfData = useCallback(async (pdfName: string): Promise<string> => {
+    console.log(pdfName);
     try {
-      const response = await fetch('http://localhost:8000/get-pdf', {
-        method: 'POST',
+      const response = await fetch(`http://localhost:8000/get-pdf/${encodeURIComponent(pdfName)}`, {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfName: pdfName}),
       });
-
       if (!response.ok) {
-        throw new Error(`Error fetching table data: ${response.statusText}`);
+        throw new Error(`Error fetching PDF data: ${response.statusText}`);
       }
-
-      const data: PdfData = await response.json();
-      return data;
+      console.log("Response: ", response);
+      const fileUrl = response.url;
+      return fileUrl;
     } catch (error) {
       console.error('Error:', error);
-      throw new Error('Failed to fetch table data');
+      throw new Error('Failed to fetch PDF data');
     }
   }, []);
-
+  
   return { fetchTables, fetchPdfs, fetchTableData, fetchPdfData };
 };
 

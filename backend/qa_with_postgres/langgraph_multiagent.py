@@ -11,7 +11,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import  trim_messages
 from langchain_core.output_parsers import JsonOutputParser
@@ -21,36 +20,16 @@ from langchain.agents.format_scratchpad.openai_tools import (format_to_openai_to
 from langgraph.types import interrupt, Command
 import logging
 from rich import print as rprint
-
-load_dotenv()
-
-list_user_messages = ["I need to be able to predict the cost of housing based on the prices in the table",
-
-"I am looking to make investment decisions for my business. I will need to take the predicted prices from the model and use it in my business",
-
-"I want to use Root Mean Squared Error (RMSE)", 
-
-"What do you mean by assumptions? give me an example",
-
-"We are on the right track, We are not making any assumptions!",
-
-"How many homes are there in the table?"]
-
-
-# Database and model setup
-DB_USER = os.getenv('POSTGRES_USER')
-DB_PASSWORD = os.getenv('POSTGRES_PASSWORD')
-DB_NAME = os.getenv('POSTGRES_DB')
-DB_HOST = os.getenv('POSTGRES_HOST')
-DB_PORT = os.getenv('POSTGRES_PORT')
-db_url = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-collection_name = "step_1_ML_project_checklist"
+from qa_with_postgres.load_config import LoadOpenAIConfig, LoadPostgresConfig
 
 # Set up tracing for debugging
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 
-# Initialize model and embedding model
+
+openai_var  = LoadOpenAIConfig()
+postgres_var = LoadPostgresConfig()
 model = ChatOpenAI(model="gpt-4o", temperature=0)
+
 
 tasks = {}
 
@@ -146,13 +125,19 @@ async def supervisor_node(state: MessageState) -> MessageState:
 
     if response["next_agent"] == "sql_agent" or response["next_agent"] == "data_analyst":
         return state
+    
+
+async def pdf_reader_agent_node(state: MessageState) -> MessageState:
+    """PDF Reader Agent Node (PDF Reader Agent Node -> __end__)"""
+    print("PDF Reader Agent Node 👾")
+    state["current_agent"] = "pdf_reader_agent"
+    
 
 
 async def sql_agent_node(state: MessageState) -> MessageState:
     """SQL Agent Node (SQL Agent Node -> SQL Validator -> __end__)"""
     print(f"SQL Agent Node 👾")
     state["current_agent"] = "sql_agent"
-
     user_message = state["question"]
 
     table_name = state["table_name"]
@@ -263,8 +248,6 @@ async def human_input(state: MessageState):
     print("Human Input Node 🤠")
     human_message = interrupt("human_input")
 
-    print("human_message: ", human_message)
-
     return {
         "messages": [
             {
@@ -312,7 +295,7 @@ class ChatbotManager:
         if table_name in self.chatbots:
             return
 
-        db_for_table = SQLDatabase.from_uri(db_url, include_tables=[table_name])
+        db_for_table = SQLDatabase.from_uri(postgres_var.db_url, include_tables=[table_name])
         toolkit = SQLDatabaseToolkit(db=db_for_table, llm=model)
         tools = toolkit.get_tools()
         sql_agent_for_table = create_sql_agent(llm=model, toolkit=toolkit, agent_type="openai-tools", verbose=False, agent_executor_kwargs={"return_intermediate_steps": True})
@@ -326,7 +309,6 @@ class ChatbotManager:
             "sql_agent": sql_agent_for_table,  # store the table-specific agent
             "table_name": table_name
         }
-        print(f"Chatbot for table '{table_name}' initialized.")
 
     async def get_chatbot(self, table_name: str):
         if table_name not in self.chatbots:
@@ -403,10 +385,13 @@ def process_stream_event(event, words_to_find, word_buffer, word_state, str_resp
     # Update word state
     word_state, word_buffer = update_word_state(find_word[1], words_to_find, word_buffer, word_state)
 
+    rprint("Word Buffer: ", word_buffer)
+
     # Process response if in word state
     if word_state:
         str_response, char_backlog = process_response(word, str_response, char_backlog)
     else:
+        print("Not in word state")
         str_response = []
         
     word_state, char_backlog = handle_finish_reason(event, word_state, char_backlog)
@@ -472,8 +457,14 @@ async def run_chatbots( table_name: str, websocket: WebSocket ):
 
             while while_loop:
                 if is_interrupted:
-                    print("Interrupted: ", len(interrupts.tasks))
+                    print("Interrupted: ", len(interrupts.tasks), "Current agent: ", cur_agent)
                     message = await message_queue.get()
+                    await websocket.send_json({
+                                        "event": "on_chain_start",
+                                        "message": "",
+                                        "table_name": table_name,
+                                        "role": next_agent
+                                    })
                     logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
                     input_arg = Command(resume=message)
 
@@ -489,12 +480,13 @@ async def run_chatbots( table_name: str, websocket: WebSocket ):
                                 
                                 if cur_agent != next_agent:
                                     cur_agent = next_agent
-                                    await websocket.send_json({
-                                        "event": "on_chain_start",
-                                        "message": "",
-                                        "table_name": table_name,
-                                        "role": next_agent
-                                    })
+                                    if cur_agent != "__end__":
+                                        await websocket.send_json({
+                                            "event": "on_chain_start",
+                                            "message": "",
+                                            "table_name": table_name,
+                                            "role": next_agent
+                                        })
 
                     if event["event"] == "on_chain_error":
                         print("Error: ", event["data"])

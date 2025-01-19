@@ -6,8 +6,5 @@ class TableNameRequest(BaseModel):
     page: int = 1  # Default to page 1
     page_size: int = 10  # Default page size is 10 rows
 
-class TableSummaryDataRequest(BaseModel):
-    table_name: str
-    total_table_row_size: Optional[int] = None
-    total_sample_row_size: Optional[int] = None
-    results: Optional[Dict] = None
+class PdfNameRequest(BaseModel):
+    pdf_name: str

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 
 // Components
 import UploadWindow from './component/upload_window';
@@ -8,9 +8,11 @@ import TenstackTable from './component/tanstack_table';
 import Pagination from './component/pagination';
 import AnalysisTab from './component/analysis_tab';
 import AboutProject from './component/about_project';
+import PdfViewer from './component/pdf_viewer';
 
 // hooks
 import { useResizableSidebar } from './hooks/useResizableSidebar';
+import { SessionProvider } from './context/useSessionContext';
 import { TaskProvider } from './context/useTaskContext';
 import { DataProvider, useDataContext } from './context/useDataContext';
 import { UIProvider } from './context/useUIcontext';
@@ -18,30 +20,38 @@ import { ChatWebsocketProvider } from './context/useChatWebsocket';
 
 // icons
 import pageHomeToggleIcon from './assets/question.png';
-import pageBrowserToggleIcon from './assets/browser.png';
+import pageHomeToggleIconOrange from './assets/question-orange.png';
+import pageBrowserToggleIcon from './assets/csv.png';
+import pageBrowserToggleIconOrange from './assets/csv-orange.png';
 import databaseTableIcon from './assets/folder.png';
 import chatBotIcon from './assets/chatbotA.png';
 import graphIcon from './assets/curve.png';
 import sidepanelIcon from './assets/hide.png';
+import pdfToggleIcon from './assets/pdf-document.png';
+import pdfToggleIconOrange from './assets/pdf-document-orange.png';
+import { Session } from 'inspector';
 
 
 
 function App() {
 
   return (
-    <ChatWebsocketProvider url="ws://localhost:8000/ws/chat-client">
-      <UIProvider>
-        <TaskProvider>
-            <DataProvider>
-                <AppContent />
-            </DataProvider>
-        </TaskProvider>
-      </UIProvider>
-    </ChatWebsocketProvider>
+    
+      <ChatWebsocketProvider url="ws://localhost:8000/ws/chat-client">
+        <SessionProvider>
+          <UIProvider>
+            <TaskProvider>
+                <DataProvider>
+                    <AppContent />
+                </DataProvider>
+            </TaskProvider>
+          </UIProvider>
+        </SessionProvider>
+      </ChatWebsocketProvider>
   );
 }
 function AppContent() {
-  const { currentTable } = useDataContext();
+  const { currentTable, currentPdf } = useDataContext();
   
   // Sidebar and resizing
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
@@ -53,19 +63,43 @@ function AppContent() {
     setSidebarOpen(!sidebarOpen);
   };
 
-  // Table visibility
+  // Component visibility
+  const [showAboutProject, setShowAboutProject] = useState<boolean>(true);
   const [showTable, setShowTable] = useState<boolean>(false);
   const [showPdf, setShowPdf] = useState<boolean>(false);
 
+  const toggleAboutProjectVisibility = () => {
+    if (!showAboutProject) {
+      setShowTable(false);
+      setShowPdf(false);
+      setShowAboutProject((prev) => !prev);
+    }
+  };
+
   const toggleTableVisibility = () => {
-    setShowTable((prev) => !prev);
+    if (!showTable) {
+      setShowAboutProject(false);
+      setShowPdf(false);
+      setShowTable((prev) => !prev);
+    }
   };
 
   const togglePdfVisibility = () => {
-    setShowPdf((prev) => !prev);
+    if (!showPdf) {
+      setShowAboutProject(false);
+      setShowTable(false);
+      setShowPdf((prev) => !prev);
+    }
   };
 
-  const isEnabled = currentTable !== null;
+  // const isEnabled = currentTable !== null;
+
+  // useEffect(() => {
+  //   console.log("Current Pdf: ", currentPdf);
+  //   console.log("Show PDF: ", showPdf);
+  //   console.log("Show About Project: ", showAboutProject);
+  //   console.log("Show Table: ", showTable);
+  // }, [currentPdf, showPdf, showAboutProject, showTable]);
 
 
   return (
@@ -102,24 +136,77 @@ function AppContent() {
           </button>
           <button className="sidebar-graph-button" 
             onClick={() => selectedSidebarContent === 'graph' ? toggleSidebar() : setSelectedSidebarContent('graph')}
-            disabled={!isEnabled}
           >
             <img src={graphIcon} alt="Graph Options" />
           </button>
           
-          <div className="sidebar-bottom-options">
+          <div className="sidebar-bottom-options">  
+
+
             {currentTable && (
               <div className="page-toggle-button" onClick={toggleTableVisibility}>
-                {showTable ? <img src={pageHomeToggleIcon} alt="Toggle page" /> 
-                : 
-                <img src={pageBrowserToggleIcon} alt="Toggle page" />}
+                <div className='toggle-icon-container'>
+                <img
+                  src={pageBrowserToggleIcon}
+                  alt="Toggle page"
+                  className={`toggle-icon ${showTable ? 'fade-out' : 'fade-in'}`}
+                />
+                <img
+                  src={pageBrowserToggleIconOrange}
+                  alt="Toggle page"
+                  className={`toggle-icon ${!showTable ? 'fade-out' : 'fade-in'}`}
+                />
+                </div>
               </div>
             )}
             {!currentTable && (
               <div className="page-toggle-button grayed-out">
-                <img src={pageHomeToggleIcon} alt="Toggle page"/>
+                <div className='toggle-icon-container'>
+                  <img src={pageBrowserToggleIcon} alt="Toggle page" />
+                </div>
               </div>
             )}
+
+            {currentPdf && (
+              <div className="page-toggle-button" onClick={togglePdfVisibility}>
+                <div className='toggle-icon-container'>
+                <img
+                  src={pdfToggleIcon}
+                  alt="Toggle page"
+                  className={`toggle-icon ${showPdf ? 'fade-out' : 'fade-in'}`}
+                />
+                <img
+                  src={pdfToggleIconOrange}
+                  alt="Toggle page"
+                  className={`toggle-icon ${!showPdf ? 'fade-out' : 'fade-in'}`}
+                />
+                </div>
+              </div>
+            )}
+            {!currentPdf && (
+              <div className="page-toggle-button grayed-out">
+                <div className='toggle-icon-container'>
+                  <img src={pdfToggleIcon} alt="Toggle page" />
+                </div>
+              </div>
+            )}
+
+              <div className="page-toggle-button" onClick={toggleAboutProjectVisibility}>
+                <div className='toggle-icon-container'>
+                <img
+                  src={pageHomeToggleIconOrange}
+                  alt="Toggle page"
+                  className={`toggle-icon ${!showAboutProject ? 'fade-out' : 'fade-in'}`}
+                />
+                <img
+                  src={pageHomeToggleIcon}
+                  alt="Toggle page"
+                  className={`toggle-icon ${showAboutProject ? 'fade-out' : 'fade-in'}`}
+                />
+                </div>
+              </div>
+
+
             <div className='sidebar-toggle-button' onClick={toggleSidebar}>
               <img src={sidepanelIcon} alt="Toggle Sidebar" style={{ transform: sidebarOpen ? 'scaleX(1)' : 'scaleX(-1)' }} />
             </div>
@@ -130,7 +217,8 @@ function AppContent() {
       <div className="main-content" style={{ marginLeft: sidebarOpen ? '0px' : `calc(-${sidebarWidth}px + 30px)` }}>
         {showTable && < TenstackTable /> }
         {showTable && < Pagination /> }
-        {!showTable && <AboutProject />}
+        {showPdf && <PdfViewer />}
+        {showAboutProject && <AboutProject />}
 
 
       </div>

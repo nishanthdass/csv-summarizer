@@ -163,7 +163,6 @@ html, body {
   width: 32px;
   height: 32px;
   cursor: pointer;
-
 }
 
 .page-toggle-button.grayed-out{
@@ -172,6 +171,30 @@ html, body {
   transition: opacity 0.3s ease, filter 0.3s ease;
 }
 
+
+.toggle-icon-container {
+  position: relative;
+  width: 32px;
+  height: 32px;
+}
+
+.toggle-icon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
+  transition: opacity 0.3s ease;
+  opacity: 0;
+}
+
+.fade-in {
+  opacity: 1;
+}
+
+.fade-out {
+  opacity: 0;
+}
 
 .sidebar-toggle-button {
   filter: grayscale(100%);
@@ -272,48 +295,47 @@ input::file-selector-button  {
 
 
 .file-item {
+  display: flex;            /* makes li a flex container */
+  align-items: center;      /* vertically center everything */
+  justify-content: space-between; /* push text left, icon right */
+
   padding: 10px;
   margin: 5px 0;
   border: 1px solid #ddd;
-  cursor: pointer; 
-  overflow: hidden; 
-  
-}
-
-.file-item:hover {
-  background-color: #f4f4f4;
-}
-
-
-.file-item:hover .delete-icon {
-  display: inline;
-  
-}
-
-.file-item-selected .delete-icon {
-  display: inline;
+  cursor: pointer;
+  overflow: hidden;
 }
 
 .file-item-selected {
+  display: flex;               /* again, ensure flex layout */
+  align-items: center;
+  justify-content: space-between;
+
   padding: 10px;
   margin: 5px 0;
   cursor: pointer;
   background-color: #a74754;
-  color: #FFFFFF; /* White for high contrast */
+  color: #FFFFFF; 
   font-weight: bold;
   border: 1px solid #ddd;
 }
 
 .file-icon {
-  cursor: pointer;
-  float: right;
-  position: relative;
+  /* remove float: right and position: relative */
   display: flex;
-  justify-content: center;
   align-items: center;
+  cursor: pointer;
   overflow: hidden;
-
   box-sizing: border-box;
+}
+
+
+.file-item:hover .delete-icon {
+  display: inline;
+}
+
+.file-item-selected .delete-icon {
+  display: inline;
 }
 
 .file-icon:hover .delete-icon {
@@ -356,6 +378,17 @@ input::file-selector-button  {
 
 .mails-containt-closed {
   margin-left: calc(-100% + 30px);
+}
+
+.pdf-container {
+  flex-grow: 1;
+  max-height: 100%;
+  max-width: 100%;
+  overflow: auto;
+  background-color: #fff;
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
 .table-container {

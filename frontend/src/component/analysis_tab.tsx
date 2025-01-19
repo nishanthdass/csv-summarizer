@@ -22,7 +22,12 @@ const isLoading = tasksForCurrentTable.some(
 
 
 useEffect(() => {
-    console.log("Messages updated:", messages);
+    // print last message
+    if (messages.length > 0) {
+        const message = messages[messages.length - 1]
+        console.log(message.message)
+    }
+
 }, [messages]);
 
 
@@ -43,6 +48,16 @@ const animate_dot = () => {
     }, 500);
     return () => clearInterval(interval);
 };
+
+const renderMessage = (message: string) => {
+    // Replace `\\n` with <br /> for rendering new lines
+    return message.split("\\n").map((line, index) => (
+      <React.Fragment key={index}>
+        {line}
+        <br />
+      </React.Fragment>
+    ));
+  };
 
 return (
 <>
@@ -80,7 +95,7 @@ return (
             placeholder="Type your message here..."
             onKeyDown={(e) => {
                 if (e.key === 'Enter' && input.trim() !== '') {
-                    handleSend(); // Call your message sending logic
+                    handleSend();
                 }
               }}
             autoFocus

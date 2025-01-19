@@ -12,7 +12,6 @@ const SelectCsvWindow = ({ setShowTable } : { setShowTable: React.Dispatch<React
 
   useEffect(() => {
     loadTablesFromDatabase();
-    console.log('Tables loaded: ', tables);
   }, []);
 
 
@@ -31,7 +30,6 @@ const SelectCsvWindow = ({ setShowTable } : { setShowTable: React.Dispatch<React
   const handleTableClick = async (tableName: string) => {
     await loadTableFromDatabase(tableName);
     setCurrentTable(tableName);
-    // setShowTable(true)
   };
 
   const handleDeleteClick = async (tableName: string) => {

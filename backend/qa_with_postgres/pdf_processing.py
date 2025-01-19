@@ -27,7 +27,7 @@ load_dotenv()
 file_name = "auto-electric-can-opener-manual.pdf"
 file_path = "pdfs/{file_name}".format(file_name=file_name)
 file_name_minus_ext = file_name.split(".")[0]
-output_folder_path = "pdfs/processsed_pdfs/{file_name_minus_ext}".format(file_name_minus_ext=file_name_minus_ext)
+output_folder_path = "uploaded_pdfs/processsed_pdfs/{file_name_minus_ext}".format(file_name_minus_ext=file_name_minus_ext)
 
 
 if not os.path.exists(output_folder_path):
@@ -68,5 +68,5 @@ create_section_relationships = create_section_relationships()
 # question_3 = "what are the steps to use the electric can opener?"
 # ask_question_window(question_3)
 
-question_4 = "My electric can opener is not turning on, what should I do?"
-ask_question_window(question_4)
+# question_4 = "My electric can opener is not turning on, what should I do?"
+# ask_question_window(question_4)

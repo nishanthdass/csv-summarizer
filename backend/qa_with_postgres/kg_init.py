@@ -2,31 +2,23 @@ import os
 import textwrap
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
-from langchain_neo4j import GraphCypherQAChain, Neo4jGraph
 from langchain_community.vectorstores import Neo4jVector
-from pdf_processing_funct import process_pdf, param_insert
+from pdf_processing_funct import param_insert
 from rich import print as rprint
 from langchain.chains import RetrievalQAWithSourcesChain
 from langchain_openai import ChatOpenAI
+from load_config import LoadOpenAIConfig, LoadNeo4jConfig
+
 
 load_dotenv()
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-OPENAI_ENDPOINT='https://api.openai.com/v1/'
-
-NEO4J_URI = os.getenv('NEO4J_URI')
-NEO4J_USERNAME = os.getenv('NEO4J_USERNAME')
-NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD')
-NEO4J_DATABASE = os.getenv('NEO4J_DATABASE')
+openai_var  = LoadOpenAIConfig()
+neo4j_var = LoadNeo4jConfig()
+kg = neo4j_var.get_NEO4J_connection()
 
 VECTOR_INDEX_NAME = "pdf_chunks"
 VECTOR_NODE_LABEL = 'Chunk'
 VECTOR_SOURCE_PROPERTY = 'text'
 VECTOR_EMBEDDING_PROPERTY = 'textEmbedding'
-
-
-kg = Neo4jGraph(
-    url=NEO4J_URI, username=NEO4J_USERNAME, password=NEO4J_PASSWORD, database=NEO4J_DATABASE
-)
 
 
 def return_any_chunk():
@@ -192,14 +184,14 @@ retrieval_query_window = """
 
 vector_store_window = Neo4jVector.from_existing_index(
     embedding=OpenAIEmbeddings(
-        openai_api_key=OPENAI_API_KEY,
-        openai_api_base=OPENAI_ENDPOINT,
-        model="text-embedding-3-large",
+        openai_api_key=openai_var.openai_api_key,
+        openai_api_base=openai_var.openai_endpoint,
+        model=openai_var.openai_embedding_model
     ),
-    url=NEO4J_URI,
-    username=NEO4J_USERNAME,
-    password=NEO4J_PASSWORD,
-    database="neo4j",
+    url=neo4j_var.neo4j_uri,
+    username=neo4j_var.neo4j_user,
+    password=neo4j_var.neo4j_password,
+    database=neo4j_var.neo4j_db,
     index_name=VECTOR_INDEX_NAME,
     text_node_property=VECTOR_SOURCE_PROPERTY,
     retrieval_query=retrieval_query_window,
@@ -212,9 +204,9 @@ retriever_window = vector_store_window.as_retriever(
 # Create a chatbot Question & Answer chain from the retriever
 chain_window = RetrievalQAWithSourcesChain.from_chain_type(
     ChatOpenAI( temperature=0,
-                openai_api_key=OPENAI_API_KEY,
-                openai_api_base=OPENAI_ENDPOINT,
-                model="gpt-4-turbo-preview",
+                openai_api_key=openai_var.openai_api_key,
+                openai_api_base=openai_var.openai_endpoint,
+                model=openai_var.openai_model
                 ), 
     chain_type="stuff", 
     retriever=retriever_window,
@@ -223,8 +215,6 @@ chain_window = RetrievalQAWithSourcesChain.from_chain_type(
 
 
 def ask_question_window(question):
-
-    
     answer = chain_window(
     {"question": question},
     return_only_outputs=True,
@@ -332,9 +322,9 @@ def create_embeddings():
     CALL db.create.setNodeVectorProperty(chunk, "textEmbedding", vector)
     """, 
     params={
-        "openAiApiKey": OPENAI_API_KEY,
-        "openAiEndpoint": OPENAI_ENDPOINT,
-        "model" : "text-embedding-3-large",
+        "openAiApiKey": openai_var.openai_api_key,
+        "openAiEndpoint": openai_var.openai_endpoint,
+        "model" : openai_var.openai_embedding_model,
     })
     kg.refresh_schema()
     print(kg.schema)

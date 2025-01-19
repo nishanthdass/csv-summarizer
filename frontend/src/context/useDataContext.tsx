@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import TableEntity, { TableSelection } from '../utilities/TableEntity';
 import PdfEntity from '../utilities/PdfEntity';
 import { get } from 'lodash';
@@ -17,10 +17,9 @@ interface DataContextType {
 
   pdfs: Record<string, PdfEntity>;
   setPdfs: React.Dispatch<React.SetStateAction<Record<string, PdfEntity>>>;
+  get_pdf: (pdfName: string) => PdfEntity | undefined;
   currentPdf: PdfEntity | null;
-  currentPdfName: string | null;
-  setCurrentPdf: (pdfName: string | null) => void;
-  get_pdf: (pdfName: string) => PdfEntity;
+  setCurrentPdf: React.Dispatch<React.SetStateAction<PdfEntity | null>>;
 
 }
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -37,18 +36,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Set Tables
   const [tables, setTables] = useState<Record<string, TableEntity>>({});
-  const [pdfs, setPdfs] = useState<Record<string, PdfEntity>>({});
-  
   const [currentTableName, setCurrentTableName] = useState<string | null>(null);
-  const [currentPdfName, setCurrentPdfName] = useState<string | null>(null);
-
-  const currentTable = currentTableName ? tables[currentTableName] : null;
-  const currentPdf = currentPdfName ? pdfs[currentPdfName] : null;
-
-  const get_table = (tableName: string) => get(tables, tableName);
-  const get_pdf = (pdfName: string) => get(pdfs, pdfName);
-
   const [tableSelections, setTableSelections] = useState<Record<string, TableSelection>>({});
+  const currentTable = currentTableName ? tables[currentTableName] : null;
+  const get_table = (tableName: string) => get(tables, tableName);
+
+
+  const [pdfs, setPdfs] = useState<Record<string, PdfEntity>>({});
+  const [currentPdf, setCurrentPdf] = useState<PdfEntity | null>(null);
+  const get_pdf = (pdfName: string): PdfEntity | undefined => get(pdfs, pdfName);
+
+  // useEffect(() => {
+  //     console.log("pdfs: ", pdfs);
+  //     console.log("currentPdf: ", currentPdf);
+  //   }, [pdfs, currentPdf]);
 
 
   return (
@@ -66,10 +67,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         pdfs,
         setPdfs,
+        get_pdf,
         currentPdf,
-        currentPdfName,
-        setCurrentPdf: setCurrentPdfName,
-        get_pdf
+        setCurrentPdf,
+        
 
       }}
     >

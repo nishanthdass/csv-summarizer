@@ -64,6 +64,6 @@ class LoadOpenAIConfig:
         # Load environment variables
         load_dotenv()
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
-        self.openai_endpoint = os.getenv('OPENAI_ENDPOINT')
-        self.openai_model = os.getenv('OPENAI_MODEL')
-        self.openai_embedding_model = os.getenv('OPENAI_EMBEDDING_MODEL')
+        self.openai_endpoint = os.getenv('OPENAI_BASE_URL')
+        self.openai_model = os.getenv('OPENAI_MODEL_NAME')
+        self.openai_embedding_model = os.getenv('OPENAI_EMB_MODEL')

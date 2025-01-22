@@ -27,7 +27,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }) => {
         prevTasks.map((task) => {
           if (task.status !== "Completed" && task.status !== "Failed") {
             // Poll task status
-            fetch(`http://localhost:8000/status/${task.table_name}/${task.task_id}`)
+            fetch(`http://localhost:8000/status/${task.name}/${task.task_id}`)
               .then((response) => response.json())
               .then((data) => {
                 task.status = data.status;
@@ -48,7 +48,7 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const pollingState = tasks.reduce((acc, task) => {
-    acc[task.table_name] = task.status !== "Completed";
+    acc[task.name] = task.status !== "Completed";
     return acc;
   }, {} as Record<string, boolean>);
 

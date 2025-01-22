@@ -15,7 +15,7 @@ export const useFileSidePanelOperations = () => {
   const { tables, setTables, setCurrentTable, get_table, pdfs, setPdfs, setCurrentPdf, get_pdf, currentPdf} = useDataContext();
 
   // Fetch functions
-  const { fetchPdfData, fetchTableData, fetchPdfs, fetchTables } = useFetchDataDatabase();
+  const { fetchSetPdfData, fetchTableData, fetchPdfs, fetchTables } = useFetchDataDatabase();
   const { fetchUploadFile, fetchDeleteFile } = useFetchUploadDeleteFile();
 
 
@@ -115,12 +115,15 @@ export const useFileSidePanelOperations = () => {
 
 
   const loadTableFromDatabase = async (
-    tableName: string,
-    page?: number,
-    pageSize?: number
+    tableName: string | null,
+    page?: number | undefined,
+    pageSize?: number | undefined
   ): Promise<void> => {
+    if (!tableName) {
+      const tableSetNull = await fetchTableData(null, null, null);
+      return;
+    }
     const table = get_table(tableName);
-
     const resolvedPage = page ?? table?.data.page;
     const resolvedPageSize = pageSize ?? table?.data.page_size;
   
@@ -146,12 +149,14 @@ export const useFileSidePanelOperations = () => {
 
 
   const loadPdfFromDatabase = async (
-    pdfName: string
+    pdfName: string | null
   ): Promise<void> => {
-  
     try {
-      console.log("pdfName: ", pdfName);
-
+      if (!pdfName) {
+        await fetchSetPdfData(null);
+        return;
+      }
+      await fetchSetPdfData(pdfName);
     } catch (error) {
       console.error('Error loading PDF:', error);
       throw error;

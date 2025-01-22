@@ -1,8 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { useTasks } from '../context/useTaskContext'
 import { useDataContext } from '../context/useDataContext';
 import { useFileSidePanelOperations } from '../hooks/useFileSidePanelOperations';
-import { set } from 'lodash';
 
 
 const SelectCsvWindow = ({ setShowTable } : { setShowTable: React.Dispatch<React.SetStateAction<boolean>> }) => {
@@ -16,7 +15,7 @@ const SelectCsvWindow = ({ setShowTable } : { setShowTable: React.Dispatch<React
 
 
   function isLoading(name: string): boolean {
-    const task = tasks.find((task) => task.table_name === name);
+    const task = tasks.find((task) => task.name === name);
     if (!task) {
       return false;
     }
@@ -28,6 +27,12 @@ const SelectCsvWindow = ({ setShowTable } : { setShowTable: React.Dispatch<React
 
 
   const handleTableClick = async (tableName: string) => {
+    if (tableName === currentTable?.name) {
+      await loadTableFromDatabase(null);
+      setCurrentTable(null);
+      setShowTable(false);
+      return;
+    } 
     await loadTableFromDatabase(tableName);
     setCurrentTable(tableName);
   };

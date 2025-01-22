@@ -41,25 +41,25 @@ pdf_obj = process_pdf(pdf_file, file_path, page_nums, output_folder_path, file_n
 
 rprint(pdf_obj)
 
-create_constraints()
-add_chunk_as_node(pdf_obj)
+# create_constraints()
+# add_chunk_as_node(pdf_obj)
 
-create_vector_index()
-create_embeddings()
+# create_vector_index()
+# create_embeddings()
 
-any_chunk = return_any_chunk()
-page_info = any_chunk[0]["pageInfo"]
+# any_chunk = return_any_chunk()
+# page_info = any_chunk[0]["pageInfo"]
 
-make_page_identifier_nodes(page_info)
-page_nodes = count_page_nodes()
+# make_page_identifier_nodes(page_info)
+# page_nodes = count_page_nodes()
 
-view_labels = view_labels()
+# view_labels = view_labels()
 
-all_chunks = return_all_chunks()
-match_nodes(all_chunks)
+# all_chunks = return_all_chunks()
+# match_nodes(all_chunks)
 
-connect_chunk_to_parent = connect_chunk_to_parent()
-create_section_relationships = create_section_relationships()
+# connect_chunk_to_parent = connect_chunk_to_parent()
+# create_section_relationships = create_section_relationships()
 
 
 # question_1 = ""What are the main steps a data scientist would go through to build a regression machine learning model?"

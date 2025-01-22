@@ -3,7 +3,10 @@ import pandas as pd
 import re
 import os
 from qa_with_postgres.routes import LoadPostgresConfig
+from qa_with_postgres.pdf_processing_funct import process_pdf
+from  qa_with_postgres.kg_init import process_pdf_to_kg
 import shutil
+import pymupdf
 
 
 task_completion_status = {}
@@ -174,16 +177,27 @@ def ingest_pdf_into_postgres(file: UploadFile):
     file_load = file.file
 
     pdf_name = re.sub(r'\.pdf$', '', file_name)
+    file_name_minus_extension = pdf_name
     pdf_name = pdf_name.replace('-', '_')
 
     pdf_upload_dir = f"./uploaded_files/pdf_files/{pdf_name}"
     os.makedirs(pdf_upload_dir, exist_ok=True)
+
+    image_output_path = pdf_upload_dir + "/images"
+    os.makedirs(image_output_path, exist_ok=True)
 
     file_location = f"{pdf_upload_dir}/{file.filename}"
 
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file_load, buffer)
 
+    complete_path = pdf_upload_dir + "/" + file_name
+
+    pdf_file = pymupdf.open(complete_path, filetype="pdf")
+    page_nums = None
+    pdf_obj = process_pdf(pdf_file, complete_path, page_nums, image_output_path, file_name_minus_extension)
+    
+    process_pdf_to_kg(pdf_obj)
 
     conn = db.get_db_connection()
     cur = conn.cursor()
@@ -240,3 +254,6 @@ def convert_postgres_to_react(columns_and_types):
         columns_and_types[i] = (column_name, react_type)
 
     return columns_and_types
+
+
+

@@ -1,5 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from "react";
-import { useChatWebSocket } from "./useChatWebsocket";
+import React, { createContext, useState, useContext, useEffect, Dispatch } from "react";
 
 const SessionContext = createContext<{
   session: any;
@@ -7,17 +6,17 @@ const SessionContext = createContext<{
 } | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState(null);
-  const { reconnect, isConnected } = useChatWebSocket();
+  const [session, setSession] = useState<any>(null); 
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!session){
+      console.log("Checking or setting session...");
         fetch("http://localhost:8000/get-session", {
             credentials: "include",
           })
             .then((response) => {
               if (response.status === 404) {
-                
                 console.log("No session found, creating new session...");
                 return fetch("http://localhost:8000/set-session", {
                   credentials: "include",
@@ -28,16 +27,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             })
             .then((response) => response.json())
             .then((data) => {
-              console.log("Session found!")
               setSession(data);
-              if (!isConnected) {
-                console.log("Reconnecting WebSocket after session is formed...");
-                reconnect();
-              }
             })
-            .catch((error) => console.error("Error checking or setting session:", error));
+            .catch((error) => console.error("Error checking or setting session:", error))
+            .finally(() => setLoading(false));
     }
   }, []);
+
+  if (loading) {
+    return <div>Loading...</div>; // Replace with your desired loading indicator
+  }
 
 
   return (

@@ -21,6 +21,9 @@ from langgraph.types import interrupt, Command
 import logging
 from rich import print as rprint
 from qa_with_postgres.load_config import LoadOpenAIConfig, LoadPostgresConfig
+from langchain.chains import RetrievalQAWithSourcesChain
+from qa_with_postgres.kg_retrieval import kg_retrieval_window
+from langchain_core.prompts import PromptTemplate
 
 # Set up tracing for debugging
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
@@ -32,6 +35,8 @@ model = ChatOpenAI(model="gpt-4o", temperature=0)
 
 
 tasks = {}
+active_websockets = {}
+active_chatbots = {}
 
 # Define trimmer for message storage
 trimmer = trim_messages(
@@ -50,7 +55,8 @@ class MessageState(TypedDict):
     next_agent: str
     question: str
     answer: str
-    table_name: str  # Add this line
+    table_name: str
+    pdf_name: str
     messages: Annotated[Sequence[BaseMessage], add_messages]
     agent_scratchpads: list
 
@@ -74,10 +80,15 @@ def find_word(word, word_to_build, string_builder):
             return string_builder
         return string_builder
 
+
+
 # --- Define Node Functions ---
 async def supervisor_node(state: MessageState) -> MessageState:
     """Supervisor Node to route questions to agents."""
     print(f"Supervisor Node 🤖")
+    print(f"Table Name: {state['table_name']}")
+    print(f"PDF Name: {state['pdf_name']}")
+
     state["current_agent"] = "supervisor"
     if state["next_agent"] != "supervisor":
         return {"messages": state["messages"], "next": state["next"]}
@@ -86,26 +97,64 @@ async def supervisor_node(state: MessageState) -> MessageState:
     trimmed_messages = trimmer.invoke(state["messages"])
 
     parser = JsonOutputParser(pydantic_object=Route)
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", 
-        "You are the supervisor of a conversation about a table that goes by {table_name}. Never make assumptions about the content of the table based on the name of the table as a bananas column can exist in the table. Ensure that all decisions are based on facts from queries or from the other agents."
-        "Your tasks are:\n\n"
-        "1. If a few database queries are needed to answer the user's question, then route the question to `sql_agent`. DO not make assumptions.\n\n"
-        "2. If the question requires predictive analysis route it to `data_analyst`.\n\n"
-        "3. If no database query or deeper analysis is needed, set the next_agent to '__end__' and answer the question.\n\n"
-        "4. If nessecary, look through {conversation_history} to look at previous messages for context.\n\n"
-        "5. If the question has nothing to do with the {table_name} table, set the next_agent to '__end__' and explain why. Never assueme anything about the table"
-        "the question is unrelated.\n\n"
-        "Return in json format:\n"
-        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
-        "The user's last request:\n{user_message}")
-    ])
+
+    if state["table_name"] is None and state["pdf_name"] is None:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system",
+            "You are the supervisor of a conversation about the data in csv tables and pdf documentations.\n\n"
+            "The user has  not selected a table or pdf yet. Never make assumptions about the content of the table or pdf.\n\n"
+            "Simply let the user know that you do not have access to the tables or pdfs and ask them to select a table and/or pdf.\n\n"
+            "Return in json format and set the next agent to '__end__:\n"
+            "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
+            "The user's last request:\n{user_message}")
+        ])
+
+    elif state["table_name"] is None and state["pdf_name"] is not None:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system",
+            "You are the supervisor of a conversation about a pdf document that goes by {pdf_name}.\n\n" 
+            "Never make assumptions about the content of the pdf.\n\n"
+            "Simply let the user know that you can route the question to `pdf_agent` who can answer the question.\n\n"
+            "Return in json format and set the next_agent to 'pdf_agent':\n"
+            "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
+            "The user's last request:\n{user_message}" )
+        ])
+
+    elif state["table_name"] is not None and state["pdf_name"] is None:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system",
+            "You are the supervisor of a conversation about a table that goes by {table_name}. Never make assumptions about the content of the table based on the name of the table as a bananas column can exist in the table. Ensure that all decisions are based on facts from queries or from the other agents."
+            "Your tasks are:\n\n"
+            "1. If a few database queries are needed to answer the user's question, then route the question to `sql_agent`. DO not make assumptions.\n\n"
+            "2. If the question requires predictive analysis route it to `data_analyst`.\n\n"
+            "3. If no database query or deeper analysis is needed, set the next_agent to '__end__' and answer the question.\n\n"
+            "4. If nessecary, look through {conversation_history} to look at previous messages for context.\n\n"
+            "5. If the question has nothing to do with the {table_name} or if {table_name} is None table, set the next_agent to '__end__' and explain why. Never assueme anything about the table"
+            "the question is unrelated.\n\n"
+            "Return in json format:\n"
+            "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
+            "The user's last request:\n{user_message}")
+        ])
+
+    elif state["table_name"] is not None and state["pdf_name"] is not None:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system",
+            "You are the supervisor of a conversation about a table that goes by {table_name} and a pdf that goes by {pdf_name}.\n\n"
+            "Never make assumptions about the content of the table or pdf.\n\n"
+            "Currently you are unable to provide services when the users has both a table and a pdf selected simultaneously.\n\n"
+            "Simply let the user know that the feature to provide services for both table and pdf is not available yet and the user should select either a table or a pdf.\n\n"
+            "Return in json format and set the next_agent to '__end__':\n"
+            "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
+            "The user's last request:\n{user_message}")
+        ])
+    
 
     chain = prompt | model | parser
 
     inputs = {
         "user_message": trimmed_messages[-1].content if trimmed_messages else "",
         "table_name": state["table_name"],
+        "pdf_name": state["pdf_name"],
         "conversation_history": conversation_history
     }
 
@@ -123,31 +172,121 @@ async def supervisor_node(state: MessageState) -> MessageState:
         state['next_agent'] = "__end__"
         return state
 
-    if response["next_agent"] == "sql_agent" or response["next_agent"] == "data_analyst":
+    if response["next_agent"] == "sql_agent" or response["next_agent"] == "data_analyst" or response["next_agent"] == "pdf_agent":
         return state
     
 
-async def pdf_reader_agent_node(state: MessageState) -> MessageState:
-    """PDF Reader Agent Node (PDF Reader Agent Node -> __end__)"""
-    print("PDF Reader Agent Node 👾")
+async def pdf_agent_node(state: MessageState) -> MessageState:
+    """PDF Reader Agent Node (pdf_agent_node -> __end__)"""
+    print("PDF Reader Agent Node 📚")
+
     state["current_agent"] = "pdf_reader_agent"
+    user_message = state["question"].content
+
+    template =  """
+                    Given the following extracted parts of a pdf document and a question, create a final answer with references ("sources"). 
+                    If you don't know the answer, just say that you don't know. Don't try to make up an answer.
+                    ALWAYS return a "sources" part in your answer. Sources is a identifier for the source of the information that you got the answer from.
+                    Always return a "process" part in your answer. Describe how you got the answer, and place it in the "process" part. Ensure that process starts with <_START_> and ends with <_END_>.
+
+                    QUESTION: {question}
+                    =========
+                    {summaries}
+                    =========
+                    process:
+                    answer : 
+                    sources :
+                """
+    
+    PROMPT = PromptTemplate(template=template, input_variables=["summaries", "question"])
+
+    chain_type_kwargs = {"prompt": PROMPT}
+
+    chain_window = RetrievalQAWithSourcesChain.from_chain_type(
+        ChatOpenAI( temperature=0,
+                    openai_api_key=openai_var.openai_api_key,
+                    openai_api_base=openai_var.openai_endpoint,
+                    model=openai_var.openai_model
+                    ), 
+        chain_type = "stuff", 
+        retriever = kg_retrieval_window(state["pdf_name"]),
+        chain_type_kwargs = chain_type_kwargs,
+        return_source_documents = True
+    )
+
+    answer = chain_window(
+        {"question": user_message},
+        return_only_outputs=True,
+        )
+    
+    rprint("answer: ", answer)
+    
+    result_message = AIMessage(content=answer["answer"])
+    state["answer"] = result_message
+    state["messages"].append(result_message)
+    state["agent_scratchpads"].append(answer["source_documents"])
+    state["next_agent"] = "pdf_validator"
+
+    return state
+
+async def pdf_validator_node(state: MessageState) -> MessageState:
+    """PDF Validator Node (pdf_agent_node -> pdf_validator_node -> __end__)"""
+    print("PDF Validator Node 📚")
+
+    state["current_agent"] = "pdf_validator"
+
+    user_message = state["question"].content
+    ai_message = state["answer"].content
+    agent_scratchpad = state["agent_scratchpads"][-1]
+
+    parser = JsonOutputParser(pydantic_object=Route)
+    
+    prompt = ChatPromptTemplate.from_messages([
+            ("system",
+            "Return in json format:\n"
+            "{{\"current_agent\": \"sql_validator\", \"next_agent\": \"__end__\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
+            "You are a QC analyst with expertise in understanting customer requests. Your task is to validate the answer to the user's question based on the information in the agent scratchpad.\n\n" 
+            "In addition, you are also responsible for providing additional information to the user to ensure they have plenty of information.\n\n"
+            "The user's last request:\n{user_message}\n\n"
+            "Here is the message from the agent:\n{ai_message}. \n\n"
+            "Look at the agent scratchpad: {agent_scratchpad}. \n\n"
+            "Ensure the answer is correct and informative based on the agent's question and the information in the agent scratchpad. If the answer is correct, then simply return the message {ai_message}. If the answer is not specific enough, and requires a more indepth analyis, then let the user know. \n\n")
+        ])
+    
+    # print("agent_scratchpad", state["agent_scratchpads"])
+    inputs = { "ai_message": ai_message,
+                "agent_scratchpad": agent_scratchpad,
+                "user_message": user_message}
+
+
+
+    chain = prompt | model | parser
+
+    response = await chain.ainvoke(inputs)
+    
+    state["messages"].append(AIMessage(content=response["answer"]))
+    state["answer"] = AIMessage(content=response["answer"])
+    state["next_agent"] = response["next_agent"]
+
+    return state
     
 
 
 async def sql_agent_node(state: MessageState) -> MessageState:
     """SQL Agent Node (SQL Agent Node -> SQL Validator -> __end__)"""
     print(f"SQL Agent Node 👾")
+
     state["current_agent"] = "sql_agent"
     user_message = state["question"]
 
-    table_name = state["table_name"]
-    global manager
-    sql_agent_for_table = manager.chatbots[table_name]["sql_agent"]
+    db_for_table = SQLDatabase.from_uri(postgres_var.db_url, include_tables=[state["table_name"]])
+    toolkit = SQLDatabaseToolkit(db=db_for_table, llm=model)
+    sql_agent_for_table = create_sql_agent(llm=model, toolkit=toolkit, agent_type="openai-tools", verbose=False, agent_executor_kwargs={"return_intermediate_steps": True})
     sql_result = sql_agent_for_table.invoke(user_message)
 
     # Include intermediate steps in the agent scratchpad
     intermediate_steps = sql_result.get("intermediate_steps", [])
-    intermediate_steps =format_to_openai_tool_messages(intermediate_steps)
+    intermediate_steps = format_to_openai_tool_messages(intermediate_steps)
     result_message = AIMessage(content=sql_result["output"])
     state["answer"] = result_message
     state["messages"].append(result_message)
@@ -159,6 +298,7 @@ async def sql_agent_node(state: MessageState) -> MessageState:
 async def sql_validator_node(state: MessageState) -> MessageState:
     """SQL Validator Node (SQL Agent Node -> SQL Validator -> __end__)"""
     print("SQL Validator Node 👾")
+
     state["current_agent"] = "sql_validator"
 
     user_message = state["question"].content
@@ -200,6 +340,7 @@ async def sql_validator_node(state: MessageState) -> MessageState:
 async def data_analyst_node(state: MessageState) -> MessageState:
     """Data Analyst Node ((Data Analyst Node <->  Human Input) -> Cleanup -> __end__)"""
     print("Data Analyst Node 👾")
+
     trimmed_messages = trimmer.invoke(state["messages"])
     
     parser = JsonOutputParser(pydantic_object=Route)
@@ -232,15 +373,13 @@ async def data_analyst_node(state: MessageState) -> MessageState:
         state["messages"].append(AIMessage(content=f"{parsed_result["question"]}"))
     state["answer"] = AIMessage(content=f"{parsed_result['answer']}")
 
-    # print("messages", state["messages"])
-
     if parsed_result["next_agent"] == "human_input":
         return Command(goto="human_input")
     else:
         print("END OF HUMAN IN THE LOOP")
         state["next_agent"] = parsed_result["next_agent"]
         state["messages"].append(AIMessage(content=f"{parsed_result['answer']}"))
-        # print("state: ", state)
+
         return state
 
 async def human_input(state: MessageState):
@@ -267,6 +406,8 @@ workflow = StateGraph(state_schema=MessageState)
 
 # Nodes
 workflow.add_node("supervisor", supervisor_node)
+workflow.add_node("pdf_agent", pdf_agent_node)
+workflow.add_node("pdf_validator", pdf_validator_node)
 workflow.add_node("sql_agent", sql_agent_node)
 workflow.add_node("sql_validator", sql_validator_node)
 workflow.add_node("data_analyst", data_analyst_node)
@@ -274,14 +415,15 @@ workflow.add_node("human_input", human_input)
 workflow.add_node("cleanup", cleanup_node)
 # Edges
 workflow.add_edge(START, "supervisor")
+workflow.add_edge("pdf_agent", "pdf_validator")
+workflow.add_edge("pdf_validator", END)
 workflow.add_edge("sql_agent", "sql_validator")
 workflow.add_edge("sql_validator", END)
-
 workflow.add_edge("data_analyst", END)
 workflow.add_edge("human_input", "data_analyst")
-# workflow.add_edge("cleanup", END)
 
 workflow.add_conditional_edges("supervisor", lambda state: state["next_agent"])
+
 
 memory = MemorySaver()
 app = workflow.compile(checkpointer=memory)
@@ -291,43 +433,207 @@ class ChatbotManager:
     def __init__(self):
         self.chatbots: Dict[str, Dict[str, List[BaseMessage]]] = {}
 
-    async def create_chatbot(self, table_name: str, language: str):
-        if table_name in self.chatbots:
+    async def create_chatbot(self, session: str, language: str):
+        if session in self.chatbots:
             return
-
-        db_for_table = SQLDatabase.from_uri(postgres_var.db_url, include_tables=[table_name])
-        toolkit = SQLDatabaseToolkit(db=db_for_table, llm=model)
-        tools = toolkit.get_tools()
-        sql_agent_for_table = create_sql_agent(llm=model, toolkit=toolkit, agent_type="openai-tools", verbose=False, agent_executor_kwargs={"return_intermediate_steps": True})
 
         thread_uuid = uuid.uuid4()
         config = {"configurable": {"thread_id": f"{thread_uuid}"}, "recursion_limit": 100}
-        self.chatbots[table_name] = {
+        self.chatbots[session] = {
             "language": language,
             "messages": [],
             "config": config,
-            "sql_agent": sql_agent_for_table,  # store the table-specific agent
-            "table_name": table_name
+            "table_name": None,
+            "pdf_name": None
         }
 
-    async def get_chatbot(self, table_name: str):
-        if table_name not in self.chatbots:
-            raise ValueError(f"No chatbot found for table '{table_name}'.")
-        return self.chatbots[table_name]
 
-    async def add_chatbot_message(self, table_name: str, message: BaseMessage):
-        if table_name not in self.chatbots:
-            raise ValueError(f"No chatbot found for table '{table_name}'.")
+    async def alter_table_name(self, session: str, table_name: str):
+        try:
+            self.chatbots[session]["table_name"] = table_name
+        
+        except Exception as e:
+            raise RuntimeError(f"Failed to add or replace Table name for session {session}: {e}")
+        
 
-        self.chatbots[table_name]["messages"].append(message)
+    async def alter_pdf_name(self, session: str, pdf_name: str):
+        try:
+            rprint(f"Adding or replacing PDF name for session {session}: {pdf_name}")
+            rprint(self.chatbots[session])
+            self.chatbots[session]["pdf_name"] = pdf_name
+        
+        except Exception as e:
+            raise RuntimeError(f"Failed to add or replace PDF name for session {session}: {e}")
 
-    async def get_messages(self, table_name: str) -> List[BaseMessage]:
-        if table_name not in self.chatbots:
-            raise ValueError(f"No chatbot found for table '{table_name}'.")
-        return self.chatbots[table_name]["messages"]
+
+    async def get_chatbot(self, session_id: str):
+        print(f"Getting chatbot for session: {session_id}: ", self.chatbots)
+        if session_id not in self.chatbots:
+            raise ValueError(f"No chatbot found for session '{session_id}'.")
+        return self.chatbots[session_id]
+    
+    async def get_chatbot_table_name(self, session_id: str):
+        if "table_name" not in self.chatbots[session_id]:
+            return None
+            
+        return self.chatbots[session_id]["table_name"]
+    
+    async def get_chatbot_pdf_name(self, session_id: str):
+        if "pdf_name" not in self.chatbots[session_id]:
+            return None
+            
+        return self.chatbots[session_id]["pdf_name"]
     
 
 manager = ChatbotManager()
+message_queue = asyncio.Queue()
+
+
+async def safe_send(message: dict, session_id: str):
+    try:
+        websocket = active_websockets[session_id]
+    except KeyError:
+        rprint(websocket.client_state)
+        logging.warning("Attempted to send a message on a closed WebSocket.")
+        return
+    
+    if websocket.client_state.name == "CONNECTED":
+        await websocket.send_json(message)
+    else:
+        rprint(websocket.client_state)
+        logging.warning("Attempted to send a message on a closed WebSocket.")
+
+
+async def start_chatbot(session: str):
+    await manager.create_chatbot(session, "English")
+
+
+async def alter_table_name(session: str, table_name: str):
+    print(f"Adding SQL agent for session_id: {session} and table_name: {table_name}")
+    await manager.alter_table_name(session, table_name)
+
+
+async def alter_pdf_name(session: str, pdf_name: str):
+    print(f"Adding SQL agent for session_id: {session} and pdf_name: {pdf_name}")
+    await manager.alter_pdf_name(session, pdf_name)
+
+
+async def run_chatbots( session_id: str):
+    chatbot = await manager.get_chatbot(session_id)
+    config = chatbot["config"]
+
+    while True:   
+        try:
+            # Wait for a new message (blocking until available)
+            rprint("Waiting for a new message...")
+            message = await message_queue.get()
+            logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
+
+            state = {
+                "current_agent": None,
+                "next_agent": "supervisor",
+                "question": HumanMessage(content=message),
+                "answer": None,
+                "table_name": await manager.get_chatbot_table_name(session_id),
+                "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+                "messages": [HumanMessage(content=message)],
+                "agent_scratchpads": []
+            }
+
+            is_interrupted = False
+            while_loop = True
+            cur_agent = None
+        
+            words_to_find = ['<_START_>', '```sql', '<_', '```']
+            word_buffer = ""
+            word_state = False
+            str_response = []
+            char_backlog = []
+
+            input_arg = state
+        
+
+            while while_loop:
+                if is_interrupted:
+                    print("Interrupted: ", len(interrupts.tasks), "Current agent: ", cur_agent)
+                    message = await message_queue.get()
+                    message = {
+                                        "event": "on_chain_start",
+                                        "message": "",
+                                        "table_name": await manager.get_chatbot_table_name(session_id),
+                                        "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+                                        "role": next_agent
+                                    }
+                    await safe_send(message, session_id)
+                    logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
+                    input_arg = Command(resume=message)
+
+                async for event in app.astream_events(input_arg, config, version="v2"):
+                    if event.get("event") == "on_chain_start":
+                        data = event.get("data", {})
+                        
+                        if isinstance(data, dict) and "input" in data:
+                            input_data = data["input"]
+                            
+                            if isinstance(input_data, dict) and "next_agent" in input_data:
+                                next_agent = input_data["next_agent"]
+                                
+                                if cur_agent != next_agent:
+                                    cur_agent = next_agent
+                                    if cur_agent != "__end__":
+                                        message = {
+                                            "event": "on_chain_start",
+                                            "message": "",
+                                            "table_name": await manager.get_chatbot_table_name(session_id),
+                                            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+                                            "role": next_agent
+                                        }
+                                        await safe_send(message, session_id)
+
+                    if event["event"] == "on_chain_error":
+                        print("Error: ", event["data"])
+                    if event["event"] == "on_chat_model_stream":
+                        prev_char_backlog = char_backlog.copy()
+                        word_buffer, word_state, str_response, char_backlog = process_stream_event(
+                            event, words_to_find, word_buffer, word_state, str_response, char_backlog
+                        )
+                        if word_state and len(str_response) > 0 and prev_char_backlog == char_backlog:
+                            message = {"event": "on_chat_model_stream", 
+                                       "message": word_buffer, 
+                                       "table_name": await manager.get_chatbot_table_name(session_id),
+                                       "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+                                       "role": event['metadata']['langgraph_node']}
+                            await safe_send(message, session_id)
+
+                    if event["event"] == "on_chain_end" and not is_interrupted:
+                        if "output" in event['data']:
+
+                            if type(event['data']['output']) == dict and 'next_agent' in event['data']['output']:
+                                if event['data']['output']['next_agent'] == "__end__":
+                                    while_loop = False
+                                    break
+
+                    interrupts = app.get_state(config)
+
+                    if len(interrupts.tasks) > 0 and interrupts.tasks[0].interrupts and not is_interrupted:
+                        print("Event: Interrupted: ", interrupts.tasks[0].interrupts)
+                        is_interrupted = True
+                        break
+                    elif len(interrupts.tasks) == 0 and is_interrupted:
+                        is_interrupted = False
+
+        except Exception as e:
+            logging.error(f"Error in chatbot processing: {e}")
+            break
+        finally:
+            if session_id in tasks:
+                del tasks[session_id]
+                print(f"Task for session_id {session_id} removed")
+
+
+
+
+
 
 def find_word_in_text( word, words_to_find, word_buffer):
     # print( "input word: ", word )
@@ -378,6 +684,7 @@ def handle_finish_reason(event, word_state, char_backlog):
 def process_stream_event(event, words_to_find, word_buffer, word_state, str_response, char_backlog):
     """Process a single streaming event and update the state."""
     word = event["data"]['chunk'].content
+    # rprint(word)
     word_buffer += word
 
     find_word = find_word_in_text(word, words_to_find, word_buffer)
@@ -385,141 +692,15 @@ def process_stream_event(event, words_to_find, word_buffer, word_state, str_resp
     # Update word state
     word_state, word_buffer = update_word_state(find_word[1], words_to_find, word_buffer, word_state)
 
-    rprint("Word Buffer: ", word_buffer)
+    # rprint("Word Buffer: ", word_buffer)
 
     # Process response if in word state
     if word_state:
         str_response, char_backlog = process_response(word, str_response, char_backlog)
     else:
-        print("Not in word state")
         str_response = []
         
     word_state, char_backlog = handle_finish_reason(event, word_state, char_backlog)
 
     return word_buffer, word_state, str_response, char_backlog
-
-
-
-async def start_chatbot(table_name: str):
-    await manager.create_chatbot(table_name, "English")
-
-async def start_chatbot_in_background(table_name: str, websocket: WebSocket):
-    print(f"Starting chatbot for table: {table_name}")
-
-    # If a task for this table already exists, cancel it before starting a new one
-    if table_name in tasks and not tasks[table_name].done():
-        tasks[table_name].cancel()
-        try:
-            await tasks[table_name]
-        except asyncio.CancelledError:
-            print(f"Previous task for table {table_name} cancelled")
-
-    # Create a new task and store it
-    task = asyncio.create_task(run_chatbots(table_name, websocket))
-    tasks[table_name] = task
-
-    
-message_queue = asyncio.Queue()
-
-async def run_chatbots( table_name: str, websocket: WebSocket ):
-    chatbot = await manager.get_chatbot(table_name)
-    config = chatbot["config"]
-
-    while True:   
-        try:
-            # Wait for a new message (blocking until available)
-            rprint("Waiting for a new message...")
-            message = await message_queue.get()
-            logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
-
-            state = {
-                "current_agent": None,
-                "next_agent": "supervisor",
-                "question": HumanMessage(content=message),
-                "answer": None,
-                "table_name": table_name,
-                "messages": [HumanMessage(content=message)],
-                "agent_scratchpads": []
-            }
-
-            is_interrupted = False
-            while_loop = True
-            cur_agent = None
-        
-            words_to_find = ['<_START_>', '```sql', '<_', '```']
-            word_buffer = ""
-            word_state = False
-            str_response = []
-            char_backlog = []
-
-            input_arg = state
-        
-
-            while while_loop:
-                if is_interrupted:
-                    print("Interrupted: ", len(interrupts.tasks), "Current agent: ", cur_agent)
-                    message = await message_queue.get()
-                    await websocket.send_json({
-                                        "event": "on_chain_start",
-                                        "message": "",
-                                        "table_name": table_name,
-                                        "role": next_agent
-                                    })
-                    logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
-                    input_arg = Command(resume=message)
-
-                async for event in app.astream_events(input_arg, config, version="v2"):
-                    if event.get("event") == "on_chain_start":
-                        data = event.get("data", {})
-                        
-                        if isinstance(data, dict) and "input" in data:
-                            input_data = data["input"]
-                            
-                            if isinstance(input_data, dict) and "next_agent" in input_data:
-                                next_agent = input_data["next_agent"]
-                                
-                                if cur_agent != next_agent:
-                                    cur_agent = next_agent
-                                    if cur_agent != "__end__":
-                                        await websocket.send_json({
-                                            "event": "on_chain_start",
-                                            "message": "",
-                                            "table_name": table_name,
-                                            "role": next_agent
-                                        })
-
-                    if event["event"] == "on_chain_error":
-                        print("Error: ", event["data"])
-                    if event["event"] == "on_chat_model_stream":
-                        prev_char_backlog = char_backlog.copy()
-                        word_buffer, word_state, str_response, char_backlog = process_stream_event(
-                            event, words_to_find, word_buffer, word_state, str_response, char_backlog
-                        )
-                        if word_state and len(str_response) > 0 and prev_char_backlog == char_backlog:
-                            await websocket.send_json({"event": "on_chat_model_stream", "message": word_buffer, "table_name": table_name, "role": event['metadata']['langgraph_node']})
-
-                    if event["event"] == "on_chain_end" and not is_interrupted:
-                        if "output" in event['data']:
-
-                            if type(event['data']['output']) == dict and 'next_agent' in event['data']['output']:
-                                if event['data']['output']['next_agent'] == "__end__":
-                                    while_loop = False
-                                    break
-
-                    interrupts = app.get_state(config)
-
-                    if len(interrupts.tasks) > 0 and interrupts.tasks[0].interrupts and not is_interrupted:
-                        print("Event: Interrupted: ", interrupts.tasks[0].interrupts)
-                        is_interrupted = True
-                        break
-                    elif len(interrupts.tasks) == 0 and is_interrupted:
-                        is_interrupted = False
-
-        except Exception as e:
-            logging.error(f"Error in chatbot processing: {e}")
-            break
-        finally:
-            if table_name in tasks:
-                del tasks[table_name]  # Remove task reference
-                print(f"Task for table {table_name} removed")
             

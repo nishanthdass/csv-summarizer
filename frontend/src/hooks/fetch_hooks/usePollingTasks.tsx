@@ -5,9 +5,9 @@ export const usePollingTasks = (tasks: Task[], setTasks: React.Dispatch<React.Se
   const pollingRef = useRef<Set<string>>(new Set());
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const pollTaskStatus = async (taskId: string, tableName: string) => {
+  const pollTaskStatus = async (taskId: string, name: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/status/${tableName}/${taskId}`);
+      const response = await fetch(`http://localhost:8000/status/${name}/${taskId}`);
       const data = await response.json();
       const { status } = data;
 
@@ -37,7 +37,7 @@ export const usePollingTasks = (tasks: Task[], setTasks: React.Dispatch<React.Se
     intervalRef.current = setInterval(() => {
       pollingRef.current.forEach((taskId) => {
         const task = tasks.find((task) => task.task_id === taskId);
-        if (task) pollTaskStatus(task.task_id, task.table_name);
+        if (task) pollTaskStatus(task.task_id, task.name);
       });
     }, 3000); // Poll every 3 seconds
   

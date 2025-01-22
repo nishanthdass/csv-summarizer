@@ -1,5 +1,6 @@
-import { add } from "lodash";
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { useFetchDataDatabase } from "../hooks/fetch_hooks/useFetchDataDatabase";
+
 
 interface Message {
   role: string;
@@ -9,14 +10,14 @@ interface Message {
 }
 
 interface ChatWebsocketContextValue {
-  isInProgress: boolean;
-  setIsInProgress: React.Dispatch<React.SetStateAction<boolean>>;
   isConnected: boolean;
   sendMessage: (table_name: string, input: string) => void;
   input: Message[];
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   reconnect: () => void;
+  setIsChatOpen: React.Dispatch<React.SetStateAction<boolean>>
+  isChatOpen: boolean
 }
 
 interface ChatWebsocketProviderProps {
@@ -27,11 +28,16 @@ interface ChatWebsocketProviderProps {
 const ChatWebsocketContext = createContext<ChatWebsocketContextValue | undefined>(undefined);
 
 export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ url, children }) => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [ connectionKey, setConnectionKey] = useState(0);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [ isConnected, setIsConnected ] = useState(false);
+  const [ isChatOpen, setIsChatOpen ] = useState(false);
+  const [ messages, setMessages ] = useState<Message[]>([]);
+
+
   const socketRef = useRef<WebSocket | null>(null);
-  const [isInProgress, setIsInProgress] = useState(false);
+  const reconnectSocketRef = useRef(true);
+
+  const { fetchStartChat } = useFetchDataDatabase();
+
 
   const formatIncomingMessage = (data: any): Message => {
     // console.log("convertToMessage data: ", data, typeof data);
@@ -51,13 +57,13 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   });
 
 
-  
-  useEffect(() => {
+  // Socket operations
+  const connect = () => {
     const socket = new WebSocket(url);
     socketRef.current = socket;
 
     socket.onopen = () => {
-      console.log("WebSocket connected");
+      // console.log("WebSocket connected");
       setIsConnected(true);
     };
 
@@ -81,24 +87,53 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
     
 
     socket.onclose = () => {
-      console.log("WebSocket disconnected");
+      // console.log("WebSocket disconnected");
       setIsConnected(false);
+
+      if (reconnectSocketRef.current) {
+        setTimeout(() => {
+          // console.log("Reconnecting...");
+          connect();
+        }, 2000);
+      }
     };
 
     socket.onerror = (error) => {
       console.error("WebSocket error:", error);
+      socket.close(); // optional
     };
+  };
+
+  // use effect to connect socket and set up reconnect logic
+  useEffect(() => {
+    reconnectSocketRef.current = true;
+    connect();
 
     return () => {
-      console.log("Cleaning up WebSocket");
-      socket.close();
+      reconnectSocketRef.current = false;
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
     };
-  }, [url, connectionKey]);
 
+  }, [url]);
+
+  useEffect(() => {
+    if (isConnected && !isChatOpen) {
+      fetchStartChat();
+      setIsChatOpen(true);
+    }
+  }, [isConnected, isChatOpen]);
+
+
+  // Seperated reconnect function for manual reconnection
   const reconnect = () => {
-    console.log("Reconnecting WebSocket...");
-    setConnectionKey((prevKey) => prevKey + 1); // Update connectionKey to re-trigger useEffect
+    if (socketRef.current) {
+      socketRef.current.close();
+    }
+    connect();
   };
+
 
   const sendMessage = (table_name: string, input: string) => {
     const formattedUserMessage = formatOutgoingMessage("User", table_name, input, "request");
@@ -136,7 +171,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   
 
   return (
-    <ChatWebsocketContext.Provider value={{ isInProgress, setIsInProgress, isConnected, sendMessage, input: messages, messages, setMessages, reconnect }}>
+    <ChatWebsocketContext.Provider value={{ isConnected, sendMessage, input: messages, messages, setMessages, reconnect, setIsChatOpen, isChatOpen }}>
       {children}
     </ChatWebsocketContext.Provider>
   );

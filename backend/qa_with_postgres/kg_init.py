@@ -1,13 +1,7 @@
-import os
-import textwrap
 from dotenv import load_dotenv
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Neo4jVector
-from pdf_processing_funct import param_insert
+from qa_with_postgres.pdf_processing_funct import param_insert
 from rich import print as rprint
-from langchain.chains import RetrievalQAWithSourcesChain
-from langchain_openai import ChatOpenAI
-from load_config import LoadOpenAIConfig, LoadNeo4jConfig
+from qa_with_postgres.load_config import LoadOpenAIConfig, LoadNeo4jConfig
 
 
 load_dotenv()
@@ -19,7 +13,6 @@ VECTOR_INDEX_NAME = "pdf_chunks"
 VECTOR_NODE_LABEL = 'Chunk'
 VECTOR_SOURCE_PROPERTY = 'text'
 VECTOR_EMBEDDING_PROPERTY = 'textEmbedding'
-
 
 def return_any_chunk():
     cypher = """
@@ -103,6 +96,7 @@ def create_section_relationships():
     kg.query(cypher)
 
 
+
 def get_first_chunk_from_section(page_info):
     cypher = """
                 MATCH (p:Page)-[r:SECTION]->(first:Chunk)
@@ -160,69 +154,6 @@ def return_longest_window(first_chunk_info):
 
     return length
 
-
-retrieval_query_window = """
-                            WITH node, score AS closestScore
-                            ORDER BY closestScore DESC LIMIT 1
-                            WITH node, closestScore, node.lineNumber AS startingLine, node.source AS startingSource, node.text AS nodeText
-                            MATCH (chunk:Chunk)
-                            WHERE chunk.source = startingSource AND chunk.pdfFileName = "auto-electric-can-opener-manual"
-                            ORDER BY chunk.lineNumber, chunk.chunkSeqId ASC
-                            WITH node, closestScore, nodeText, startingLine, startingSource,
-                                collect(chunk { lineNumber: chunk.lineNumber, chunkSeqId: chunk.chunkSeqId, text: chunk.text }) AS additionalChunks,
-                                collect(chunk.text) AS textOnly
-                            RETURN
-                                apoc.text.join(textOnly, " \n ") AS text,
-                                closestScore AS score,
-                                node {
-                                    lineNumber: startingLine,
-                                    source: startingSource,
-                                    additionalChunks: additionalChunks
-                                } AS metadata
-                        """
-
-
-vector_store_window = Neo4jVector.from_existing_index(
-    embedding=OpenAIEmbeddings(
-        openai_api_key=openai_var.openai_api_key,
-        openai_api_base=openai_var.openai_endpoint,
-        model=openai_var.openai_embedding_model
-    ),
-    url=neo4j_var.neo4j_uri,
-    username=neo4j_var.neo4j_user,
-    password=neo4j_var.neo4j_password,
-    database=neo4j_var.neo4j_db,
-    index_name=VECTOR_INDEX_NAME,
-    text_node_property=VECTOR_SOURCE_PROPERTY,
-    retrieval_query=retrieval_query_window,
-)
-
-# Create a retriever from the vector store
-retriever_window = vector_store_window.as_retriever(
-)
-
-# Create a chatbot Question & Answer chain from the retriever
-chain_window = RetrievalQAWithSourcesChain.from_chain_type(
-    ChatOpenAI( temperature=0,
-                openai_api_key=openai_var.openai_api_key,
-                openai_api_base=openai_var.openai_endpoint,
-                model=openai_var.openai_model
-                ), 
-    chain_type="stuff", 
-    retriever=retriever_window,
-    return_source_documents=True
-)
-
-
-def ask_question_window(question):
-    answer = chain_window(
-    {"question": question},
-    return_only_outputs=True,
-    )
-    print(textwrap.fill(answer["answer"]))
-
-    print("\nSource Documents:")
-    rprint(answer)
 
 
 def refresh_schema():
@@ -330,28 +261,25 @@ def create_embeddings():
     print(kg.schema)
 
 
+def process_pdf_to_kg(pdf_obj):
+    try:
+        create_constraints()
+        add_chunk_as_node(pdf_obj)
 
-def remove_constraints():
-    show_constraints = kg.query("""SHOW CONSTRAINTS""")
+        create_vector_index()
+        create_embeddings()
 
-    for constraint in show_constraints:
-        constraint_name = constraint["name"]
-        kg.query(f"DROP CONSTRAINT $constraint_name", params={"constraint_name":constraint_name})
+        any_chunk = return_any_chunk()
+        page_info = any_chunk[0]["pageInfo"]
+        make_page_identifier_nodes(page_info)
 
+        count_page_nodes()
+        view_labels()
 
+        all_chunks = return_all_chunks()
+        match_nodes(all_chunks)
 
-def remove_indexes():
-    show_index = kg.query("""SHOW INDEXES""")
-    for record in show_index:
-        index_name = record["name"]
-        kg.query(f"DROP INDEX $index_name", params={"index_name":index_name})
-    # show_index = kg.query("""SHOW INDEXES""")
-    # rprint(show_index)
-
-def show_dbs():
-    show_dbs = kg.query("""SHOW DATABASES YIELD name""")
-    rprint(show_dbs)
-
-def drop_db(NEO4J_DATABASE):
-    kg.query(f"DROP DATABASE {NEO4J_DATABASE}", params={"NEO4J_DATABASE":NEO4J_DATABASE})
-
+        connect_chunk_to_parent()
+        create_section_relationships()
+    except Exception as e:
+        rprint(f"Query failed: {str(e)}")

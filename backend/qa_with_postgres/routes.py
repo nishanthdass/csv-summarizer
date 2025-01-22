@@ -4,18 +4,18 @@ import psycopg2
 from qa_with_postgres.load_config import LoadPostgresConfig
 from qa_with_postgres.models import TableNameRequest, PdfNameRequest
 from qa_with_postgres.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data
-from qa_with_postgres.table_tasks import get_task, delete_task_table
-from qa_with_postgres.langgraph_multiagent import message_queue, start_chatbot, start_chatbot_in_background
+from qa_with_postgres.tasks import get_task, delete_task_table
+from qa_with_postgres.langgraph_multiagent import message_queue, start_chatbot, alter_table_name, alter_pdf_name, run_chatbots, active_websockets, tasks
 from rich import print as rprint
 import os
-
-
+import re
+import asyncio
+from starlette.status import HTTP_401_UNAUTHORIZED
 
 
 # Create a router object
 router = APIRouter()
 db = LoadPostgresConfig()
-active_websockets = {}
 
 
 
@@ -28,6 +28,7 @@ async def upload_file(file: UploadFile = File(...)):
         ingest_csv_into_postgres(file)
     else:
         ingest_pdf_into_postgres(file)
+
 
 
 # Refactor to send table_name via Request
@@ -103,8 +104,6 @@ async def get_pdf_files(request: Request):
             res_obj = {"pdf_file_name": pdf_file_name[0][1],
                         "table_name": file}
             table_content.append(res_obj)
-
-
         cur.close()
         conn.close()
 
@@ -123,26 +122,83 @@ async def get_table(table: TableNameRequest, request: Request):
     table_name = table.table_name
     page = table.page
     page_size = table.page_size
-    
-    try:
-        table_data = get_table_data(table_name, page, page_size)
-        # await start_chatbot(table_name)
-        # websocket = active_websockets.get(client_id)
-        # await start_chatbot_in_background(table_name, websocket)
-        
-        return table_data
-    except psycopg2.DatabaseError as e:
-        print(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error while fetching table data.")
+    try: 
+        session = await verify_session(request)
+        print(f"chat_server for session: {session}")
     except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+        print(f"Unexpected error in WebSocket endpoint: {e}")
     
+    if not table_name:
+        try:
+            await alter_table_name(session['name'], None)
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to get table name")
+    else:
+        try:
+            table_data = get_table_data(table_name, page, page_size)
+            await alter_table_name(session['name'], table_name)
+            
+            return table_data
+        except psycopg2.DatabaseError as e:
+            print(f"Database error: {str(e)}")
+            raise HTTPException(status_code=500, detail="Internal server error while fetching table data.")
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
-@router.get("/get-pdf/{pdf_name}")
-async def get_pdf(pdf_name: str):
-    print(pdf_name)
 
+@router.post("/set-pdf", status_code=200)
+async def set_pdf(pdf_name: PdfNameRequest, request: Request):
+    rprint("Set PDF: ", pdf_name, request)
+    try: 
+        session = await verify_session(request)
+        print(f"chat_server for session: {session}")
+    except Exception as e:
+        print(f"Unexpected error in WebSocket endpoint: {e}")
+
+    if not pdf_name.pdf_name:
+        try:
+            await alter_pdf_name(session['name'], None)
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+    
+    else:
+        try:
+            conn = db.get_db_connection()
+            cur = conn.cursor()
+
+            cur.execute(f"SELECT to_regclass('{pdf_name.pdf_name}')")
+            table_exists = cur.fetchone()[0]
+            if not table_exists:
+                raise HTTPException(status_code=404, detail=f"Table {pdf_name.pdf_name} not found.")
+
+            cur.execute(f"SELECT {pdf_name.pdf_name + '.pdf_file_name'} FROM {pdf_name.pdf_name};")
+
+            file_name = cur.fetchone()[0]
+            file_name_minus_extension = re.sub(r'\.pdf$', '', file_name)
+
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+        
+        try:
+            await alter_pdf_name(session['name'], file_name_minus_extension)
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+  
+
+@router.get("/get-pdf/{pdf_name}", status_code=200)
+async def get_pdf(pdf_name: str, request: Request):
+    try: 
+        session = await verify_session(request)
+        print(f"chat_server for session: {session}")
+    except Exception as e:
+        print(f"Unexpected error in WebSocket endpoint: {e}")
 
     try:
         conn = db.get_db_connection()
@@ -163,6 +219,7 @@ async def get_pdf(pdf_name: str):
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
     
+    
     pdf_path = os.path.abspath(f"./uploaded_files/pdf_files/{pdf_name}/{file_name}")
 
     if not os.path.exists(pdf_path):
@@ -175,32 +232,67 @@ async def get_pdf(pdf_name: str):
         content_disposition_type="inline"   
     )
 
-
-@router.get("/status/{table_name}/{task_id}")
-async def get_status(table_name: str, task_id: str):
-    return get_task(table_name, task_id)
+# @router.get("/status/{table_name}/{task_id}")
+# async def get_status(table_name: str, task_id: str):
+#     return get_task(table_name, task_id)
 
 
 @router.websocket("/ws/chat-client")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
 
-    session = websocket.cookies.get("session")
-    if not session:
-        await websocket.close(code=4000, reason="Session not found")
-        return
+    await websocket.accept()
     
-    client_id = str(id(websocket))
-    active_websockets[client_id] = {
-        "websocket": websocket,
-        "session": session
-    }
+    try: 
+        session = await verify_session(websocket)
+        active_websockets[session['name']] = websocket
+        print(f"websocket_endpoint for session: {session}")
+    except Exception as e:
+        print(f"Unexpected error in WebSocket endpoint: {e}")
 
     try:
         while True:
+            print("Waiting for message in websocket: ", active_websockets[session['name']])
             data = await websocket.receive_json()
             await message_queue.put(data["message"])
-    except WebSocketDisconnect as e:
-        print(f"WebSocket disconnected: {e}")
+    except WebSocketDisconnect:
+        print(f"WebSocket disconnected for session: {session}")
+    except Exception as e:
+        print(f"Unexpected error in WebSocket endpoint: {e}")
     finally:
-        del active_websockets[client_id]
+        print(f"Closing WebSocket connection for session: {session}")
+        active_websockets.pop(session['name'], None)
+
+
+@router.post("/chat-server")
+async def chat_server(request: Request):
+    try: 
+        session = await verify_session(request)
+        print(f"chat_server for session: {session}")
+    except Exception as e:
+        print(f"Unexpected error in WebSocket endpoint: {e}")
+
+    try:
+        if session['name'] not in active_websockets:
+            return {"message": "No active websockets for session: " + session['name']}
+        
+        if not tasks.get(session['name']):
+            print("No chat-server task exists for session: ", session)
+            await start_chatbot(session['name'])
+            task = asyncio.create_task(run_chatbots(session['name']))
+            tasks[session['name']] = task
+            # print(f"Started chatbot for session_id: {session}: ", tasks)
+        else:
+            print("chat-server task already exists for session: ", session)
+            task = tasks.get(session['name'])
+            print("The task is: ", task)
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+    
+
+async def verify_session(request: Request):
+    print("Verifying session: ", request)
+    if "user_data" not in request.session:
+        print("Invalid session: ", request.session)
+        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid session")
+    return request.session["user_data"]

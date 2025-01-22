@@ -4,7 +4,7 @@ import { useTasks } from '../context/useTaskContext';
 import { useChatWebSocket } from '../context/useChatWebsocket';
 import ReactMarkdown from "react-markdown";
 
-const AnalysisTab = () => {
+const ChatbotTab = () => {
 const { currentTable } = useDataContext();
 const { tasks } = useTasks();
 
@@ -13,12 +13,13 @@ const [input, setInput] = useState('');
 const [animatedDots, setAnimatedDots] = useState('');
 
 const tasksForCurrentTable = tasks.filter(
-    (task) => task.table_name === currentTable?.name
+    (task) => task.name === currentTable?.name
   );
 
 const isLoading = tasksForCurrentTable.some(
     (task) => task.status !== 'Completed' && task.status !== 'Failed'
   );
+
 
 
 useEffect(() => {
@@ -49,15 +50,6 @@ const animate_dot = () => {
     return () => clearInterval(interval);
 };
 
-const renderMessage = (message: string) => {
-    // Replace `\\n` with <br /> for rendering new lines
-    return message.split("\\n").map((line, index) => (
-      <React.Fragment key={index}>
-        {line}
-        <br />
-      </React.Fragment>
-    ));
-  };
 
 return (
 <>
@@ -78,7 +70,7 @@ return (
                     p: ({ children }) => <span>{children}</span>,
                 }}
                 >
-                {message.message == "" ? animatedDots : message.message}
+                {message.message === "" ? animatedDots : message.message}
                 </ReactMarkdown>
             </span>
             ))}
@@ -90,6 +82,7 @@ return (
     <div className="input-container">
         <input
             type="text"
+            disabled={!isConnected}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message here..."
@@ -100,11 +93,11 @@ return (
               }}
             autoFocus
         />
-        <button onClick={handleSend}>Send</button>
+        <button onClick={handleSend} disabled={!isConnected}>Send</button>
     </div>
 </>
 );
 };
 
-export default AnalysisTab;
+export default ChatbotTab;
 

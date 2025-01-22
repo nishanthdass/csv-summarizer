@@ -2,9 +2,10 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict
 
 class TableNameRequest(BaseModel):
-    table_name: str
-    page: int = 1  # Default to page 1
-    page_size: int = 10  # Default page size is 10 rows
+    table_name: Optional[str] = None
+    page: Optional[int] = 1
+    page_size: Optional[int] = 10 
+
 
 class PdfNameRequest(BaseModel):
-    pdf_name: str
+    pdf_name: Optional[str] = None

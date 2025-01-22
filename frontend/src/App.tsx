@@ -6,7 +6,7 @@ import SelectCsvWindow from './component/select_csv_window';
 import SelectPdfWindow from './component/select_pdf_window';
 import TenstackTable from './component/tanstack_table';
 import Pagination from './component/pagination';
-import AnalysisTab from './component/analysis_tab';
+import ChatbotTab from './component/chatbot_tab';
 import AboutProject from './component/about_project';
 import PdfViewer from './component/pdf_viewer';
 
@@ -16,7 +16,7 @@ import { SessionProvider } from './context/useSessionContext';
 import { TaskProvider } from './context/useTaskContext';
 import { DataProvider, useDataContext } from './context/useDataContext';
 import { UIProvider } from './context/useUIcontext';
-import { ChatWebsocketProvider } from './context/useChatWebsocket';
+import { ChatWebsocketProvider, useChatWebSocket } from './context/useChatWebsocket';
 
 // icons
 import pageHomeToggleIcon from './assets/question.png';
@@ -36,9 +36,9 @@ import { Session } from 'inspector';
 function App() {
 
   return (
-    
+
+    <SessionProvider>
       <ChatWebsocketProvider url="ws://localhost:8000/ws/chat-client">
-        <SessionProvider>
           <UIProvider>
             <TaskProvider>
                 <DataProvider>
@@ -46,12 +46,13 @@ function App() {
                 </DataProvider>
             </TaskProvider>
           </UIProvider>
-        </SessionProvider>
       </ChatWebsocketProvider>
+    </SessionProvider>
   );
 }
 function AppContent() {
   const { currentTable, currentPdf } = useDataContext();
+  const { isConnected } = useChatWebSocket();
   
   // Sidebar and resizing
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
@@ -126,7 +127,7 @@ function AppContent() {
         {selectedSidebarContent === 'graph' && (
           <div className="sidebar-graph" ref={sidebarContentRef}>
             <h2>Chatbot</h2>
-            <AnalysisTab />
+            <ChatbotTab />
           </div>
         )}
 
@@ -134,15 +135,23 @@ function AppContent() {
           <button className="sidebar-table-button" onClick={() => selectedSidebarContent === 'table' ? toggleSidebar() : setSelectedSidebarContent('table')}>
             <img src={databaseTableIcon} alt="Table Options" />
           </button>
-          <button className="sidebar-graph-button" 
-            onClick={() => selectedSidebarContent === 'graph' ? toggleSidebar() : setSelectedSidebarContent('graph')}
-          >
-            <img src={graphIcon} alt="Graph Options" />
-          </button>
+          {isConnected ? (
+              <button
+                className="sidebar-graph-button"
+                onClick={() =>
+                  selectedSidebarContent === 'graph' ? toggleSidebar() : setSelectedSidebarContent('graph')
+                }
+              >
+                <img src={graphIcon} alt="Graph Options" />
+              </button>
+          ) : (
+              <button className="sidebar-graph-button" disabled={true}>
+                <img src={graphIcon} alt="Graph Options" />
+              </button>
+          )}
+
           
           <div className="sidebar-bottom-options">  
-
-
             {currentTable && (
               <div className="page-toggle-button" onClick={toggleTableVisibility}>
                 <div className='toggle-icon-container'>

@@ -41,11 +41,12 @@ export const useFetchDataDatabase = () => {
   }, [fetchPdfs]);
 
 
-  const fetchTableData = useCallback(async (tableName: string, page: number, pageSize: number): Promise<TableData> => {
+  const fetchTableData = useCallback(async (tableName: string | null, page: number | null, pageSize: number | null): Promise<TableData> => {
     try {
       const response = await fetch('http://localhost:8000/get-table', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ table_name: tableName, page, page_size: pageSize }),
       });
 
@@ -61,26 +62,47 @@ export const useFetchDataDatabase = () => {
     }
   }, []);
 
-  const fetchPdfData = useCallback(async (pdfName: string): Promise<string> => {
-    console.log(pdfName);
+  const fetchSetPdfData = useCallback(async (pdfName: string | null): Promise<PdfData> => {
+    console.log("fetchSetPdfData: ", pdfName);
     try {
-      const response = await fetch(`http://localhost:8000/get-pdf/${encodeURIComponent(pdfName)}`, {
-        method: 'GET',
+      const response = await fetch(`http://localhost:8000/set-pdf`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pdf_name: pdfName }),
       });
       if (!response.ok) {
         throw new Error(`Error fetching PDF data: ${response.statusText}`);
       }
-      console.log("Response: ", response);
-      const fileUrl = response.url;
-      return fileUrl;
+
+
+      const data : PdfData = await response.json();
+      return data;
     } catch (error) {
       console.error('Error:', error);
       throw new Error('Failed to fetch PDF data');
     }
   }, []);
+
+  const fetchStartChat = useCallback(async () => {
+    try {
+      const response = await fetch('http://localhost:8000/chat-server', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(`Error fetching chat data: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error:', error);
+      throw new Error('Failed to fetch chat data');
+    }
+  }, []);
   
-  return { fetchTables, fetchPdfs, fetchTableData, fetchPdfData };
+  return { fetchTables, fetchPdfs, fetchTableData, fetchSetPdfData, fetchStartChat};
 };
 
 

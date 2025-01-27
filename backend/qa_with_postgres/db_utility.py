@@ -7,7 +7,7 @@ from qa_with_postgres.pdf_processing_funct import process_pdf
 from  qa_with_postgres.kg_init import process_pdf_to_kg
 import shutil
 import pymupdf
-
+from rich import print as rprint
 
 task_completion_status = {}
 db = LoadPostgresConfig()
@@ -25,7 +25,7 @@ db = LoadPostgresConfig()
 
 #     except Exception as e:
 #         return {"detail": f"An error occurred while fetching summary data: {str(e)}"}
-def get_ctids(table_name: str, query: str):
+def run_query(table_name: str, query: str):
     conn = db.get_db_connection()
     cur = conn.cursor()
 
@@ -34,15 +34,34 @@ def get_ctids(table_name: str, query: str):
     if not table_exists:
         raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
     
-    print(query)
+    # get all column names
+    cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}';")
+    column_names = [row[0] for row in cur.fetchall()]
+    
     cur.execute(query)
-    ctids = [row[0] for row in cur.fetchall()]
-    print(ctids)
+    columns = cur.description
+    values = cur.fetchall()
+
+    rprint("column_names: ", column_names)
+    rprint("columns: ", columns)
+
+    llm_query_result = [dict(zip([col[0] for col in columns if col], row)) for row in values]
+
+    rprint("llm_query_result: ", llm_query_result)
+    filtered_llm_query_result = []
+
+    for row in llm_query_result:
+        rprint("row: ", row)
+        row = {key: value for key, value in row.items() if key == 'ctid' or (key in column_names)}
+        filtered_llm_query_result.append(row)
+
+    rprint("filtered_llm_query_result: ", filtered_llm_query_result)
+
 
     cur.close()
     conn.close()
 
-    return ctids
+    return filtered_llm_query_result
 
 def get_table_data(table_name: str, page: int, page_size: int):
     conn = db.get_db_connection()
@@ -60,7 +79,6 @@ def get_table_data(table_name: str, page: int, page_size: int):
 
     cur.execute(f"SELECT *, ctid FROM {table_name} LIMIT {page_size} OFFSET {offset}")
     rows = cur.fetchall()
-
     columns = [desc[0] for desc in cur.description]
 
     cur.execute(f"""
@@ -85,7 +103,6 @@ def get_table_data(table_name: str, page: int, page_size: int):
     }
 
     return table_data
-
 
 
 def get_pdf_data(pdf_name: str):

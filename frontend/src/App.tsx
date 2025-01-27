@@ -99,8 +99,6 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    console.log(stack);
-    
     if (currentTable === null && getTopElement() === 'table') {
       popFromStack();
     } 

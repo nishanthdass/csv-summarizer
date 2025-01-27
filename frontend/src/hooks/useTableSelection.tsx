@@ -1,12 +1,20 @@
 // src/hooks/useTableSelection.ts
+import React, { useEffect, useState } from 'react';
 import { useDataContext } from '../context/useDataContext';
 import { TableCellContextObject } from '../utilities/TableEntity';
+import { useFetchDataDatabase } from './fetch_hooks/useFetchDataDatabase';
+import { useFileSidePanelOperations } from './useFileSidePanelOperations';
 
 export const useTableSelection = () => {
-
-  const { currentTable, currentTableName, tableSelections, setTableSelections} = useDataContext();
+  const { fetchRunSQLQuery } = useFetchDataDatabase();
+  const { currentTable, currentTableName, tableSelections, setTableSelections, tableSqlSelections, setTableSqlSelections} = useDataContext();
+  const { loadTableFromDatabase } = useFileSidePanelOperations();
   // Handle Column Click
+
+
+
   const handleColumnClick = (column: string, columnIndex: number) => {
+    
     if (!currentTableName) {
       console.warn('No current table selected.');
       return;
@@ -38,62 +46,79 @@ export const useTableSelection = () => {
   };
 
 
-  interface CtidsResponse {
+  interface SetCellResponse {
     success: boolean;
     data: string[];
   }
-  const setCellViaCtid = (ctids: CtidsResponse) => {
+
+  
+  const handleChatQueryTableSelect = async (query: string, tableName: string) => {
     if (!currentTableName || !currentTable) {
-      console.warn('No current table selected.');
+      console.warn("No current table selected.");
       return;
     }
+  
+    try {
+      // Fetch data matching your query
+      const result = await fetchRunSQLQuery(query, tableName);
+      const toBeSelectedCells = result.data;
+  
+      setTableSqlSelections((prevSelections) => {
+        const oldSelection = prevSelections[currentTableName] || {
+          selectedCells: [],
+          selectedRows: [],
+          selectedColumns: [],
+        };
 
-    const { success, data } = ctids;
+        let updatedSelectedRows = [...oldSelection.selectedRows];
+        let updatedSelectedCells = [...oldSelection.selectedCells];
   
-    const currentSelection = tableSelections[currentTableName] || {
-      selectedCells: [],
-      selectedRows: [],
-      selectedColumns: [],
-    };
+        for (let i = 0; i < toBeSelectedCells.length; i++) {
+          const sqlData = toBeSelectedCells[i];
+          if (!sqlData) continue;
   
-    // Helper function to create a valid TableCellContextObject
-    const createCellObject = (ctid: string): TableCellContextObject => ({
-      ctid: "(0,6)",
-      column: "brand",
-      row: 5,
-      value: "dodge",
-      tenstackRowNumber: 5,
-    });
+          const keys = Object.keys(sqlData);
+          if (keys.length === 1 && keys.includes("ctid")) {
 
-  
-    // Iterate over each ctid in the list and toggle selection
-    let updatedSelectedCells = [...currentSelection.selectedCells];
-    console.log("ctids type:", typeof data);
-    console.log("ctids value:", data);
+            const ctid = sqlData.ctid;
 
-    data.forEach((ctid) => {
-      const isAlreadySelected = updatedSelectedCells.some((cell) => cell.ctid === ctid);
+            const isRowAlreadySelected = updatedSelectedRows.some((row) => row.ctid === ctid );
+            const isCellAlreadySelected = updatedSelectedCells.some((cell) => cell.ctid === ctid);
+
+            if (!isRowAlreadySelected) {
+              updatedSelectedRows = [...updatedSelectedRows, { ctid }];
+            }
+          } else if (keys.length > 1 && keys.includes("ctid")) {
+            console.log("Keys: ", keys);
+            console.log("SQL Data: ", sqlData);
+            const ctid = sqlData.ctid;
+            for (let j = 0; j < keys.length; j++) {
+              const key = keys[j];
+              const value = sqlData[key];
+              if (key !== "ctid") {
+                updatedSelectedCells = [...updatedSelectedCells, { column: key, ctid: ctid, row: null, value: value, tenstackRowNumber: null }];
+              }
+            }
+
+          }
+        }
   
-      if (isAlreadySelected) {
-        // Remove if already selected
-        updatedSelectedCells = updatedSelectedCells.filter((cell) => cell.ctid !== ctid);
-      } else {
-        // Add if not already selected
-        updatedSelectedCells.push(createCellObject(ctid));
-      }
-    });
-  
-    // Update state with the new selection
-    setTableSelections((prevSelections) => ({
-      ...prevSelections,
-      [currentTableName]: {
-        ...currentSelection,
-        selectedCells: updatedSelectedCells,
-      },
-    }));
-  
-    console.log('Updated Selected Cells:', updatedSelectedCells);
+        return {
+          ...prevSelections,
+          [currentTableName]: {
+            ...oldSelection,
+            selectedRows: updatedSelectedRows,
+            selectedCells: updatedSelectedCells,
+          },
+        };
+      });
+    } catch (error) {
+      console.error(error);
+    }
   };
+  
+  
+
   
   
   // Handle Cell Click
@@ -104,6 +129,7 @@ export const useTableSelection = () => {
     row: number,
     tenstackRowNumber: number
   ) => {
+    console.log("column: ", column, "value: ", value, "ctid: ", ctid, "row: ", row, "tenstackRowNumber: ", tenstackRowNumber);
     if (!currentTableName || !currentTable) {
       console.warn('No current table selected.');
       return;
@@ -175,6 +201,8 @@ export const useTableSelection = () => {
       selectedColumns: [],
     };
 
+    console.log("handleRowClick currentSelection: ", currentSelection);
+
     const isRowAlreadySelected = currentSelection.selectedRows.some(
       (row) => row.ctid === ctid
     );
@@ -224,5 +252,5 @@ export const useTableSelection = () => {
 
   
 
-  return { handleColumnClick, handleCellClick, handleRowClick, setCellViaCtid };
+  return { handleColumnClick, handleCellClick, handleRowClick, handleChatQueryTableSelect };
 };

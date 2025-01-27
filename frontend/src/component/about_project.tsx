@@ -21,10 +21,10 @@ const AboutProject: React.FC = () => {
           
           <ul>
           <p>
-            <li>Handles questions such as "How many...", "Sum of...", "Most recent...", etc.</li>
-            <li>Automatically generates SQL queries to fetch or summarize information from the database, tailored to user inputs.</li>
-            <li>Supports complex queries with conditions, aggregations, and joins.</li>
-            <li>Utilizes queries to filter results in the table or highlight specific data using the ctid.</li>
+            <li><span className='highlight-green'>Handles questions such as "How many...", "Sum of...", "Most recent...", etc.</span></li>
+            <li><span className='highlight-green'>Automatically generates SQL queries to fetch or summarize information from the database, tailored to user inputs.</span></li>
+            <li><span className='highlight-red'>Supports complex queries with conditions, aggregations, and joins.</span></li>
+            <li><span className='highlight-yellow'>Utilizes queries to filter results in the table or highlight specific data using the ctid.</span></li>
           </p>
           </ul>
           
@@ -33,10 +33,10 @@ const AboutProject: React.FC = () => {
           <strong>Augmented Data Insights:</strong> Users can provide context related to CSV data by uploading supporting PDFs.
           <ul>
           <p>
-            <li>Uses PDF data to generate insights for the user, supporting standalone Q&A retrievals and image extractions from the PDF.</li>
-            <li>Enhances retrievals by building knowledge graphs to form relationships between PDF(nodes such as chapters, pages, headers, lines) and CSV. PDF and CSV nodes are contextualized with semantic summaries and keywords.</li>
-            <li>Clusters nodes from the PDF and CSV using natural language processing (NLP) to group related content by themes or topics. These clusters establish relationships between nodes from both sources, enabling contextual associations.</li>
-            <li>Uses PDF data and contextual clusters to autocomplete cell content in newly added columns, leveraging relationships established in the knowledge graph.</li>
+            <li><span className='highlight-yellow'>Uses PDF data to generate insights for the user, supporting standalone Q&A retrievals and <span className='highlight-red'>image extractions from the PDF.</span></span></li>
+            <li><span className='highlight-yellow'>Enhances retrievals by building knowledge graphs to form relationships between PDF(nodes such as chapters, pages, headers, lines) and CSV. PDF and CSV nodes are contextualized with semantic summaries and keywords.</span></li>
+            <li><span className='highlight-yellow'>Clusters nodes from the PDF and CSV using natural language processing (NLP) to group related content by themes or topics. These clusters establish relationships between nodes from both sources, enabling contextual associations.</span></li>
+            <li><span className='highlight-yellow'>Uses PDF data and contextual clusters to autocomplete cell content in newly added columns, leveraging relationships established in the knowledge graph.</span></li>
           </p>
           </ul>
         </li>
@@ -44,10 +44,12 @@ const AboutProject: React.FC = () => {
           <strong>Data Analytics:</strong> Uses Machine Learning and Agentic AI to analyze data patterns and trends.
           
           <ul>
-          <p>  
+          <p> 
+            <span className='highlight-red'>
             <li>Guides users through the data analytics process, helping them normalize, clean, and prepare data for modeling.</li>
             <li>Provides visualizations to aid user understanding and assist in selecting the right model for their use case.</li>
             <li>Runs predictive models and provides detailed metrics for evaluation.</li>
+            </span>
           </p>
           </ul>
 

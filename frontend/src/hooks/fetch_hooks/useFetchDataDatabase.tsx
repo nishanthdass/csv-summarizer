@@ -62,6 +62,7 @@ export const useFetchDataDatabase = () => {
     }
   }, []);
 
+
   const fetchSetPdfData = useCallback(async (pdfName: string | null): Promise<PdfData> => {
     try {
       const response = await fetch(`http://localhost:8000/set-pdf`, {
@@ -101,7 +102,7 @@ export const useFetchDataDatabase = () => {
     }
   }, []);
 
-  const fetchSqlQueryFromMessage = useCallback(async (message: string, table_name: string) => {
+  const fetchRunSQLQuery = useCallback(async (message: string, table_name: string) => {
     try {
       const response = await fetch('http://localhost:8000/sql-query', {
         method: 'POST',
@@ -113,7 +114,7 @@ export const useFetchDataDatabase = () => {
         throw new Error(`Error fetching SQL query: ${response.statusText}`);
       }
       const data = await response.json();
-      console.log(data);
+      console.log("Response: ", data);
       return data;
     } catch (error) {
       console.error('Error:', error);
@@ -122,6 +123,6 @@ export const useFetchDataDatabase = () => {
   }, []);
   
   
-  return { fetchTables, fetchPdfs, fetchTableData, fetchSetPdfData, fetchStartChat, fetchSqlQueryFromMessage};
+  return { fetchTables, fetchPdfs, fetchTableData, fetchSetPdfData, fetchStartChat, fetchRunSQLQuery};
 };
 

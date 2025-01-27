@@ -2,20 +2,29 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import { useFetchDataDatabase } from "../hooks/fetch_hooks/useFetchDataDatabase";
 
 
-interface Message {
+interface MessageInstance {
   role: string;
   table_name: string;
   event: string;
   message: string;
-  is_action?: boolean
+  modified_query?: string | null;
+  modified_query_label?: string | null;
+}
+
+interface Message {
+  role: string;
+  sql_queries?: string
+  table_name: string;
+  run_id?: string;
+  full_message: string;
 }
 
 interface ChatWebsocketContextValue {
   isConnected: boolean;
   sendMessage: (table_name: string, input: string) => void;
-  input: Message[];
-  messages: Message[];
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  input: MessageInstance[];
+  messages: MessageInstance[];
+  setMessages: React.Dispatch<React.SetStateAction<MessageInstance[]>>;
   reconnect: () => void;
   setIsChatOpen: React.Dispatch<React.SetStateAction<boolean>>
   isChatOpen: boolean
@@ -31,8 +40,7 @@ const ChatWebsocketContext = createContext<ChatWebsocketContextValue | undefined
 export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ url, children }) => {
   const [ isConnected, setIsConnected ] = useState(false);
   const [ isChatOpen, setIsChatOpen ] = useState(false);
-  const [ messages, setMessages ] = useState<Message[]>([]);
-
+  const [ messages, setMessages ] = useState<MessageInstance[]>([]);
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectSocketRef = useRef(true);
@@ -40,18 +48,18 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   const { fetchStartChat } = useFetchDataDatabase();
 
 
-  const formatIncomingMessage = (data: any): Message => {
-
+  const formatIncomingMessage = (data: any): MessageInstance => {
     return {
       role: String(data.role),
       table_name: String(data.table_name),
       event: String(data.event),
       message: String(data.message),
-      is_action: Boolean(data.is_action),
+      modified_query: String(data.modified_query),
+      modified_query_label: String(data.modified_query_label),
     };
   };
 
-  const formatOutgoingMessage = (role: string, table_name: string, message: string, event: string): Message => ({
+  const formatOutgoingMessage = (role: string, table_name: string, message: string, event: string): MessageInstance => ({
     role,
     table_name,
     event,
@@ -80,6 +88,10 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
 
         if (message.event === "on_chat_model_stream") {
           buildOnLastMessage(message);
+        }
+
+        if (message.event === "on_chain_end") {
+          finishLastMessage(message);
         }
         
       } catch (error) {
@@ -149,11 +161,11 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
     }
   };
 
-  const addNewMessage = (message: Message) => {
+  const addNewMessage = (message: MessageInstance) => {
     setMessages((prevMessages) => [...prevMessages, message]);
   }
 
-  const buildOnLastMessage = (deltaMessage: Message) => {
+  const buildOnLastMessage = (deltaMessage: MessageInstance) => {
     setMessages((prevMessages) => {
       if (prevMessages.length === 0) {
         console.warn("No messages to update.");
@@ -164,7 +176,27 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       updatedMessages[updatedMessages.length - 1] = {
         ...lastMessage,
         message: deltaMessage.message,
-        is_action: deltaMessage.is_action
+      };
+  
+      return updatedMessages;
+    });
+  };
+
+  const finishLastMessage = (message: MessageInstance) => {
+    console.log("Finish last message: ", message);
+    setMessages((prevMessages) => {
+      if (prevMessages.length === 0) {
+        console.warn("No messages to update.");
+        return prevMessages;
+      }
+      const updatedMessages = [...prevMessages];
+      const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+      updatedMessages[updatedMessages.length - 1] = {
+        ...lastMessage,
+        message: lastMessage.message,
+        modified_query: message.modified_query,
+        modified_query_label: message.modified_query_label
       };
   
       return updatedMessages;

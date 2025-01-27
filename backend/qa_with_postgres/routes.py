@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse, JSONResponse
 import psycopg2
 from qa_with_postgres.load_config import LoadPostgresConfig
 from qa_with_postgres.models import TableNameRequest, PdfNameRequest
-from qa_with_postgres.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data, get_ctids
+from qa_with_postgres.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data, run_query
 from qa_with_postgres.tasks import get_task, delete_task_table
 from qa_with_postgres.langgraph_multiagent import message_queue, start_chatbot, alter_table_name, alter_pdf_name, run_chatbots, active_websockets, tasks, call_sql_agent
 from rich import print as rprint
@@ -303,13 +303,9 @@ async def sql_query(request: Request):
     try:
         body = await request.json()
         rprint(body)
-        augmented_query = "Return a usable query that can be used to retrieve all ctids of the data associated with the query:" + body['query'] + "Do not impose your own restrictions, focus on the provided query and retreiving all ctids. Do not run the query. Do not add any additional text"
-        results = await call_sql_agent({"question": augmented_query, "table_name": body['table_name']})
+        result = run_query(body['table_name'], body['query'])
+        return JSONResponse(content={"success": True, "data": result})
 
-        rprint(results)
-        sql_query = clean_sql_query(results['output'])
-        ctids = get_ctids(body['table_name'], sql_query)
-        return JSONResponse(content={"success": True, "data": ctids})
     except Exception as e:
         rprint(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -322,8 +318,3 @@ async def verify_session(request: Request):
         print("Invalid session: ", request.session)
         raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid session")
     return request.session["user_data"]
-
-
-def clean_sql_query(output: str) -> str:
-    cleaned_query = output.replace("```sql\n", "").replace("\n```", "")
-    return cleaned_query.strip()

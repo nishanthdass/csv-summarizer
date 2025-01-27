@@ -34,6 +34,7 @@ os.environ["LANGCHAIN_TRACING_V2"] = "true"
 openai_var  = LoadOpenAIConfig()
 postgres_var = LoadPostgresConfig()
 model = ChatOpenAI(model="gpt-4o", temperature=0)
+db = LoadPostgresConfig()
 
 
 tasks = {}
@@ -61,8 +62,10 @@ class MessageState(TypedDict):
     pdf_name: str
     messages: Annotated[Sequence[BaseMessage], add_messages]
     agent_scratchpads: list
-    sql_queries: list
-    is_streaming: bool
+    columns_and_types: str
+    modified_query: str
+    modified_query_label: str
+
 
 
 
@@ -84,7 +87,24 @@ def find_word(word, word_to_build, string_builder):
             return string_builder
         return string_builder
 
+def get_all_columns_and_types(table_name, db):
 
+    columns_and_types = []
+    conn = db.get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name}';")
+    columns_and_types = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    response = ""
+    for i in range(len(columns_and_types)):
+        column_name, postgres_type = columns_and_types[i]
+        response +=  str(column_name) + "(" + str(postgres_type) + ") + ,"
+
+    return response
 
 # --- Define Node Functions ---
 async def supervisor_node(state: MessageState) -> MessageState:
@@ -134,7 +154,7 @@ async def supervisor_node(state: MessageState) -> MessageState:
             "5. If the question has nothing to do with the {table_name} or if {table_name} is None table, set the next_agent to '__end__' and explain why. Never assueme anything about the table"
             "the question is unrelated.\n\n"
             "Return in json format:\n"
-            "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
+            "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer to question or the step being taken to answer the question <_END_>\", \"modified_query\": The previously created sql_agent query(with the ctid) or an empty string. Only use when retrieving answer from conversation_history.\", \"modified_query_label\": The previously created sql_agent query(with the label) or an empty string.\"}}\n\n"
             "The user's last request:\n{user_message}")
         ])
 
@@ -160,15 +180,20 @@ async def supervisor_node(state: MessageState) -> MessageState:
         "conversation_history": conversation_history
     }
 
+
     try:
+        rprint("Invoking chain")
         response = await chain.ainvoke(inputs)
     except Exception as e:
         logging.error(f"Error invoking chain: {e}")
         response = None
 
+    rprint("Proceeding")
+
     state["messages"].append(AIMessage(content=response["answer"]))
     state["answer"] = AIMessage(content=response["answer"])
     state["next_agent"] = response["next_agent"]
+
 
     if response["next_agent"] == "supervisor":
         state['next_agent'] = "__end__"
@@ -293,62 +318,56 @@ async def sql_agent_node(state: MessageState) -> MessageState:
     print(f"SQL Agent Node 👾")
 
     state["current_agent"] = "sql_agent"
-    # user_message = state["question"]
     sql_result = await call_sql_agent(state)
-
-    # rprint("sql_result: ", sql_result)
-
-    # Include intermediate steps in the agent scratchpad
     intermediate_steps = sql_result.get("intermediate_steps", [])
     intermediate_steps = format_to_openai_tool_messages(intermediate_steps)
+    rprint(state["columns_and_types"])
 
+    query_arg = None
+    for step in intermediate_steps:
+        if isinstance(step, AIMessageChunk):
+            tool_call = step.tool_calls[0]
+            tool_chunk = step.tool_call_chunks[0]
+            if "query" in tool_call["args"]:
+                query_arg = tool_call["args"]["query"]
+
+    parser = JsonOutputParser(pydantic_object=Route)
+    
+    prompt = ChatPromptTemplate.from_messages([
+            ("system",
+            "You are a SQL expert. You are the SQL agent of a conversation whose generated queries will help visualize the answer to the user's question.\n\n"
+            "The question is: {question}\n\n"
+            "The answer is: {answer}\n\n"
+            "The query is: {query_arg}\n\n"
+            "The database columns and types are: {columns_and_types} for you to use.\n\n"
+            ""
+            "You will be provided with a query and a user question. Your task is to generate a new query that will help visualize the answer to the user's question:\n"
+            "1. If it is an aggregate query, modify the query to include 'ctid' by using 'GROUP BY' appropriately. Make sure to include the valid column name/names from {columns_and_types} and use llm_count as a variable for COUNT.\n"
+            "2. If it is not an aggregate query, modify the query to include 'ctid' dynamically in the SELECT clause along with the column name/names from {columns_and_types}.\n"
+            "3. Make sure to choose the approprate ctid column based on the table schema and the user's question.\n"
+            "4. Create a label(max 4 words) with the word select. For example, 'Select all items', 'Select the items', etc..\n\n"
+            "Return in json format with original query in 'answer', modified query in 'modified_query' and a label in 'modified_query_label':\n"
+            "{{\"current_agent\": \"sql_agent\", \"next_agent\": \"sql_agent\", \"question\": \"None\", \"answer\": \"<_START_> {query_arg} <_END_>\", \"modified_query\": \"Modified Query\", \"modified_query_label\": \"modified query label\"}}\n\n")
+        ])
+    
+    inputs = { "query_arg": query_arg, "answer": sql_result["output"], "question": state["question"].content, "columns_and_types": state["columns_and_types"]}
+    rprint(inputs)
+
+    chain = prompt | model | parser
+    response = await chain.ainvoke(inputs)
+
+
+    query_message = AIMessage(content=query_arg)
+    modified_query = response["modified_query"]
+    modified_query_label = response["modified_query_label"]
+    mod_query_dict = f"modified_query: {modified_query}, modified_query_label: {modified_query_label}"
     result_message = AIMessage(content= sql_result["output"])
     state["answer"] = result_message
+    state["messages"].append(query_message)
+    state["messages"].append(AIMessage(content=mod_query_dict))
     state["messages"].append(result_message)
     state["agent_scratchpads"].append(intermediate_steps)
     state["next_agent"] = "sql_validator"
-
-
-    # query = [step for step in intermediate_steps if isinstance(step, AIMessageChunk) and step.tool_calls[0]['name'] == "sql_db_query"][0]
-    # query_arg = None
-
-    # if isinstance(query, AIMessageChunk):
-    #     tool_call = query.tool_calls
-    #     if "name" in tool_call[0] and tool_call[0]['name'] == "sql_db_query":
-    #         # rprint("tool_call: ", tool_call[0]['args'])
-    #         if "query" in tool_call[0]['args']:
-    #             query_arg = tool_call[0]['args']['query']
-    #         else:
-    #             query_arg = None
-
-    # parser = JsonOutputParser(pydantic_object=Route)
-    
-    # prompt = ChatPromptTemplate.from_messages([
-    #         ("system",
-    #         "Return in json format:\n"
-    #         "{{\"current_agent\": \"sql_agent\", \"next_agent\": \"sql_agent\", \"question\": \"None\", \"answer\": \"<_START_> {query_arg} <_END_>\"}}\n\n")
-    #     ])
-    
-    # inputs = { "query_arg": query_arg}
-
-    # chain = prompt | model | parser
-
-    # await chain.ainvoke(inputs)
-
-    # if query_arg is not None:
-    #     query_arg = f"Return a usable query that can be used to retrieve all ctids of the data associated with the query: {query_arg}. Do not impose your own restrictions, focus on the provided query and retreiving all ctids. Do not run the query."
-    
-
-    # new_state = MessageState(
-    #     question=HumanMessage(content=query_arg),
-    #     answer=state["answer"],
-    #     messages=state["messages"],
-    #     agent_scratchpads=state["agent_scratchpads"],
-    #     table_name=state["table_name"],
-    #     next_agent=state["next_agent"]
-    # )
-
-    # ctid_query = await call_sql_agent(new_state)
 
     return state
 
@@ -503,13 +522,15 @@ class ChatbotManager:
             "messages": [],
             "config": config,
             "table_name": None,
-            "pdf_name": None
+            "pdf_name": None,
+            "columns_and_types": None
         }
 
 
     async def alter_table_name(self, session: str, table_name: str):
         try:
             self.chatbots[session]["table_name"] = table_name
+            self.chatbots[session]["columns_and_types"] = get_all_columns_and_types(table_name, db)
         
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace Table name for session {session}: {e}")
@@ -543,6 +564,12 @@ class ChatbotManager:
             return None
             
         return self.chatbots[session_id]["pdf_name"]
+    
+    async def get_chatbot_columns_and_types(self, session_id: str):
+        if "columns_and_types" not in self.chatbots[session_id]:
+            return None
+            
+        return self.chatbots[session_id]["columns_and_types"]
     
 
 manager = ChatbotManager()
@@ -598,9 +625,9 @@ async def run_chatbots( session_id: str):
                 "pdf_name": await manager.get_chatbot_pdf_name(session_id),
                 "messages": [HumanMessage(content=message)],
                 "agent_scratchpads": [],
-                "sql_queries": [],
-                "is_streaming": False
+                "columns_and_types": await manager.get_chatbot_columns_and_types(session_id)
             }
+            rprint("State: ", state)
 
             is_interrupted = False
             while_loop = True
@@ -632,37 +659,14 @@ async def run_chatbots( session_id: str):
                     input_arg = Command(resume=message)
 
                 async for event in app.astream_events(input_arg, config, version="v2"):
-                    # rprint("Received event: ", event)
                     if event.get("event") == "on_chain_start":
                         data = event.get("data", {})     
-                        if cur_agent == "sql_agent" and isinstance(data, dict) and "input" in data:
-                            input_data = data["input"]
-                            if "query" in input_data:
-                                query = input_data["query"]
-                                message = {"event": "on_chat_model_stream", 
-                                       "message": query, 
-                                       "table_name": await manager.get_chatbot_table_name(session_id),
-                                       "pdf_name": await manager.get_chatbot_pdf_name(session_id),
-                                       "role": "sql_agent",
-                                       "is_action": True}
-                                await safe_send(message, session_id)
                         if isinstance(data, dict) and "input" in data:
                             input_data = data["input"]
                             if isinstance(input_data, dict) and "next_agent" in input_data:
                                 next_agent = input_data["next_agent"]
-
                                 if cur_agent != next_agent:
-                                    if cur_agent == "sql_agent" and query is None:
-                                            message = {
-                                                "event": "on_chat_model_stream",
-                                                "message": "Processing complete...",
-                                                "table_name": await manager.get_chatbot_table_name(session_id),
-                                                "pdf_name": await manager.get_chatbot_pdf_name(session_id),
-                                                "role": "sql_agent"
-                                            }
-                                            await safe_send(message, session_id)
-                                    elif cur_agent == "sql_agent" and query is not None:
-                                        query = None
+                                    # rprint("on_chain_start: ", cur_agent)
                                     cur_agent = next_agent
                                     if cur_agent != "__end__":
                                         message = {
@@ -670,7 +674,10 @@ async def run_chatbots( session_id: str):
                                             "message": "",
                                             "table_name": await manager.get_chatbot_table_name(session_id),
                                             "pdf_name": await manager.get_chatbot_pdf_name(session_id),
-                                            "role": next_agent
+                                            "role": next_agent,
+                                            "modified_query": "",
+                                            "modified_query_label": ""
+
                                         }
                                         await safe_send(message, session_id)
 
@@ -679,29 +686,37 @@ async def run_chatbots( session_id: str):
                         print("Error: ", event["data"])
                     if event["event"] == "on_chat_model_stream":
                         prev_char_backlog = char_backlog.copy()
+
                         word_buffer, word_state, str_response, char_backlog = process_stream_event(
                             event, words_to_find, word_buffer, word_state, str_response, char_backlog
                         )
                         if word_state and len(str_response) > 0 and prev_char_backlog == char_backlog:
                             role = event['metadata']['langgraph_node']
-                            if role == "sql_agent":
-                                message = {"event": "on_chat_model_stream", 
+                            message = {"event": "on_chat_model_stream", 
                                         "message": word_buffer, 
                                         "table_name": await manager.get_chatbot_table_name(session_id),
                                         "pdf_name": await manager.get_chatbot_pdf_name(session_id),
-                                        "role": role}
-                                await safe_send(message, session_id)
-
-                            else:
-                                message = {"event": "on_chat_model_stream", 
-                                        "message": word_buffer, 
-                                        "table_name": await manager.get_chatbot_table_name(session_id),
-                                        "pdf_name": await manager.get_chatbot_pdf_name(session_id),
-                                        "role": role}
-                                await safe_send(message, session_id)
+                                        "role": role,
+                                        "modified_query": "",
+                                        "modified_query_label": ""
+                                        }
+                            # rprint(message)
+                            await safe_send(message, session_id)
 
                     if event["event"] == "on_chain_end" and not is_interrupted:
                         if "output" in event['data']:
+                            if 'modified_query' in event['data']['output']:
+                                rprint("Source: ", event['data']['output']['modified_query'])
+                                message = {"event": "on_chain_end", 
+                                            "message": "", 
+                                            "table_name": await manager.get_chatbot_table_name(session_id),
+                                            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+                                            "role": role,
+                                            "modified_query": str(event['data']['output']['modified_query']),
+                                            "modified_query_label": str(event['data']['output']['modified_query_label'])
+                                            }
+                                rprint("message: ", message)
+                                await safe_send(message, session_id)
 
                             if type(event['data']['output']) == dict and 'next_agent' in event['data']['output']:
                                 if event['data']['output']['next_agent'] == "__end__":

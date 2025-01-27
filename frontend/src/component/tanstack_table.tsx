@@ -14,6 +14,7 @@ import {
   ColumnResizeDirection,
 } from '@tanstack/react-table';
 import { table } from 'console';
+import { get, set } from 'lodash';
 
 
 const columnHelper = createColumnHelper<any>();
@@ -23,8 +24,8 @@ const TenstackTable = () => {
     const [columnResizeMode, setColumnResizeMode] = React.useState<ColumnResizeMode>('onChange');
     const [columnResizeDirection, setColumnResizeDirection] = React.useState<ColumnResizeDirection>('ltr');
 
-    const { currentTable, currentTableName, tableSelections } = useDataContext();
-    const { handleColumnClick, handleCellClick, handleRowClick } = useTableSelection();
+    const { currentTable, currentTableName, tableSelections, tableSqlSelections, setTableSelections} = useDataContext();
+    const {  handleColumnClick, handleCellClick, handleRowClick } = useTableSelection();
     const { tableZoomLevel } = useUIContext();
 
     const currentSelection = tableSelections[currentTableName || ''] || {
@@ -33,9 +34,124 @@ const TenstackTable = () => {
       selectedColumns: [],
     };
 
+    const currentSqlSelection = tableSqlSelections[currentTableName || ''] || {
+      selectedCells: [],
+      selectedRows: [],
+      selectedColumns: [],
+    };
+
+
+
     useEffect(() => {
-      console.log('Table Selections:', tableSelections);
-    }, [tableSelections]);
+      const selectedSqlRows = currentSqlSelection.selectedRows.map((row) => row.ctid);
+      const selectedSqlCells = currentSqlSelection.selectedCells;
+
+      for (const ctid of selectedSqlRows) {
+        const getRowIndex = currentTable?.data.rows.findIndex((row) => row.ctid === ctid);
+        if (getRowIndex !== undefined && getRowIndex !== -1 && currentTable) {
+          const tenstackRowNumber =
+            getRowIndex + (currentTable.data.page - 1) * currentTable.data.page_size;
+          const foundRow = currentTable.data.rows[getRowIndex];
+          const isRowAlreadySelected = currentSelection.selectedRows.some(
+            (row) => row.ctid === ctid
+          );
+  
+          if (!isRowAlreadySelected && foundRow) {
+            // Build the array of cell objects for the row
+            const newCells = Object.entries(foundRow)
+              .filter(([key]) => key !== 'ctid')
+              .map(([column, value]) => ({
+                column,
+                ctid,
+                row: getRowIndex,
+                value,
+                tenstackRowNumber,
+              }));
+  
+            if (newCells.length > 0 && ctid) {
+                setTableSelections((prevTableSelections) => {
+                  const oldTableSelection =
+                    prevTableSelections[currentTableName || ''] || {
+                      selectedCells: [],
+                      selectedRows: [],
+                      selectedColumns: [],
+                    };
+  
+                  return {
+                    ...prevTableSelections,
+                    [currentTableName || '']: {
+                      selectedCells: [
+                        ...oldTableSelection.selectedCells,
+                        ...newCells,
+                      ],
+                      selectedRows: [
+                        ...oldTableSelection.selectedRows,
+                        { ctid },
+                      ],
+                      selectedColumns: [...oldTableSelection.selectedColumns],
+                    },
+                  };
+                });
+            }
+          }
+        }
+      }
+
+      console.log("selectedSqlCells: ", selectedSqlCells);
+
+      interface Cell {
+        column: string;
+        ctid: string;
+        row: number;
+        value: any;
+        tenstackRowNumber: number;
+      }
+      
+      const newCells: Cell[] = [];
+
+      for (const cell of selectedSqlCells) {
+        const { column, ctid, row, value, tenstackRowNumber } = cell;
+
+        const getRowIndex = currentTable?.data.rows.findIndex((row) => row.ctid === ctid);
+        if (getRowIndex !== undefined && getRowIndex !== -1 && currentTable) {
+          const tenstackRowNumber = getRowIndex + (currentTable.data.page - 1) * currentTable.data.page_size;
+          const foundRow = currentTable.data.rows[getRowIndex];
+          const isCellAlreadySelected = currentSelection.selectedCells.some(
+            (cell) => cell.ctid === ctid
+          );
+  
+          if (!isCellAlreadySelected && foundRow) {
+            // Build the array of cell objects for the row
+            const getSqlCell = {
+              column: column ?? '', 
+              ctid: ctid ?? '',
+              row: getRowIndex,
+              value,
+              tenstackRowNumber,
+            };
+            newCells.push(getSqlCell);
+          }
+        }
+      }
+      setTableSelections((prevTableSelections) => {
+        const oldTableSelection =
+          prevTableSelections[currentTableName || ''] || {
+            selectedCells: [],
+            selectedRows: [],
+            selectedColumns: [],
+          };
+      
+        return {
+          ...prevTableSelections,
+          [currentTableName || '']: {
+            selectedCells: [...oldTableSelection.selectedCells, ...newCells],
+            selectedRows: [...oldTableSelection.selectedRows],
+            selectedColumns: [...oldTableSelection.selectedColumns],
+          },
+        };
+      });
+
+    }, [currentSqlSelection, currentTable]);
 
     const zoomLevel = useMemo(() => {
         if (currentTable?.name) {

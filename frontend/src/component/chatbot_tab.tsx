@@ -7,8 +7,7 @@ import { useTableSelection } from '../hooks/useTableSelection';
 
 const ChatbotTab = () => {
 const { currentTable } = useDataContext();
-const { setCellViaCtid } = useTableSelection();
-const { fetchSqlQueryFromMessage } = useFetchDataDatabase();
+const { handleChatQueryTableSelect } = useTableSelection();
 const { tasks } = useTasks();
 
 const { isConnected, sendMessage, messages } = useChatWebSocket();
@@ -29,31 +28,13 @@ useEffect(() => {
     // print last message
     if (messages.length > 0) {
         const message = messages[messages.length - 1]
-        // console.log(message)
-        if (message.role === 'sql_agent') {
-            console.log(message)
-        }
     }
 }, [messages]);
 
-const handleShowOnly = async(message: string, table_name: string) => {
+const handleClickSql = async(message: string, table_name: string) => {
     if (isConnected) {
         try {
-            console.log(message)
-            const ctid = await fetchSqlQueryFromMessage(message, table_name);
-            setCellViaCtid(ctid);
-            
-            
-        } catch (error) {
-            console.error(error);
-        }
-    }
-};
-
-const handleShowAndFilter = async (message: string, table_name: string) => {
-    if (isConnected) {
-        try {
-            await fetchSqlQueryFromMessage(message, table_name);
+            handleChatQueryTableSelect(message, table_name);
         } catch (error) {
             console.error(error);
         }
@@ -92,13 +73,12 @@ return (
         </div>
         <div className="chat-messages">
             {messages.map((message, index) => 
-                message.is_action ? (
+                typeof message.modified_query === 'string' && message.modified_query.length > 0  ? (
                     <span key={index} className={`message-line ${message.role}`} >
                     <strong>{message.role}:</strong>
                     {message.message === "" ? animatedDots : "  " + message.message}
                     <p>
-                        <button className="sql-Query-button" onClick={() => handleShowOnly(message.message, message.table_name)}>Generate CTID via LLM</button>
-                        <button className="sql-Query-button" onClick={() => handleShowAndFilter(message.message, message.table_name)}>Run SQL Query</button>
+                    <button className="sql-query-button" onClick={() => message.modified_query && handleClickSql(message.modified_query, message.table_name)}>{message.modified_query_label}</button>
                     </p>
                     </span>
                 ) : (

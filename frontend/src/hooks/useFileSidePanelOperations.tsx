@@ -126,7 +126,9 @@ export const useFileSidePanelOperations = () => {
     const table = get_table(tableName);
     const resolvedPage = page ?? table?.data.page;
     const resolvedPageSize = pageSize ?? table?.data.page_size;
-  
+
+    // console.log("tableName: ", tableName, "page: ", page, "pageSize: ", pageSize);
+    // console.log("resolvedPage: ", resolvedPage, "resolvedPageSize: ", resolvedPageSize);
     try {
       const tableData = await fetchTableData(tableName, resolvedPage, resolvedPageSize);
   

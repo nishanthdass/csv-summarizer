@@ -14,6 +14,8 @@ interface DataContextType {
   get_table: (tableName: string) => TableEntity;
   tableSelections: Record<string, TableSelection>;
   setTableSelections: React.Dispatch<React.SetStateAction<Record<string, TableSelection>>>;
+  tableSqlSelections: Record<string, TableSelection>;
+  setTableSqlSelections: React.Dispatch<React.SetStateAction<Record<string, TableSelection>>>;
 
   pdfs: Record<string, PdfEntity>;
   setPdfs: React.Dispatch<React.SetStateAction<Record<string, PdfEntity>>>;
@@ -36,9 +38,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Set Tables
   const [tables, setTables] = useState<Record<string, TableEntity>>({});
+  
   const [currentTableName, setCurrentTableName] = useState<string | null>(null);
   const [tableSelections, setTableSelections] = useState<Record<string, TableSelection>>({});
+  const [tableSqlSelections, setTableSqlSelections] = useState<Record<string, TableSelection>>({});
   const currentTable = currentTableName ? tables[currentTableName] : null;
+  const fullCurrentTable = currentTableName ? tables[currentTableName] : null;
   const get_table = (tableName: string) => get(tables, tableName);
 
 
@@ -46,10 +51,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [currentPdf, setCurrentPdf] = useState<PdfEntity | null>(null);
   const get_pdf = (pdfName: string): PdfEntity | undefined => get(pdfs, pdfName);
 
-  // useEffect(() => {
-  //     console.log("pdfs: ", pdfs);
-  //     console.log("currentPdf: ", currentPdf);
-  //   }, [pdfs, currentPdf]);
+  useEffect(() => {
+    console.log(tableSelections);
+  }, [tableSelections]);
 
 
   return (
@@ -64,6 +68,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         get_table,
         tableSelections,
         setTableSelections,
+        tableSqlSelections,
+        setTableSqlSelections,
 
         pdfs,
         setPdfs,

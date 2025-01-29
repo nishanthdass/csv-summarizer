@@ -212,7 +212,7 @@ def ingest_pdf_into_postgres(file: UploadFile):
 
     pdf_name = re.sub(r'\.pdf$', '', file_name)
     file_name_minus_extension = pdf_name
-    pdf_name = pdf_name.replace('-', '_')
+    pdf_name = re.sub(r'[^a-zA-Z0-9]+', '_', pdf_name)
 
     pdf_upload_dir = f"./uploaded_files/pdf_files/{pdf_name}"
     os.makedirs(pdf_upload_dir, exist_ok=True)
@@ -230,8 +230,10 @@ def ingest_pdf_into_postgres(file: UploadFile):
     pdf_file = pymupdf.open(complete_path, filetype="pdf")
     page_nums = None
     pdf_obj = process_pdf(pdf_file, complete_path, page_nums, image_output_path, file_name_minus_extension)
+
+    # rprint(pdf_obj)
     
-    process_pdf_to_kg(pdf_obj)
+    process_pdf_to_kg(pdf_obj, file_name_minus_extension)
 
     conn = db.get_db_connection()
     cur = conn.cursor()
@@ -248,6 +250,8 @@ def ingest_pdf_into_postgres(file: UploadFile):
         # Create table
         cur.execute(create_table_query)
         conn.commit()
+
+        sanitize_pdf_name = pdf_name.replace('-', '_')
 
         # Add metadata to the table
         cur.execute(f"COMMENT ON TABLE {pdf_name} IS 'source_type: pdf';")

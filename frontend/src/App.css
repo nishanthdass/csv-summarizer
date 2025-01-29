@@ -685,3 +685,26 @@ td,
   padding: 5px;
   border-radius: 5px;
 }
+
+.highlight-yellow {
+  background-color: rgba(255, 255, 0, 0.3); /* 30% opacity */
+  color: black; 
+}
+
+.highlight-red {
+  background-color: rgba(255, 0, 0, 0.3); /* 30% opacity */
+  color: black; 
+}
+
+.highlight-green {
+  background-color: rgba(0, 255, 0, 0.3); /* 30% opacity */
+  color: black; 
+}
+
+.agent-sketch-img {
+  width: 60%;
+  height: auto;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}

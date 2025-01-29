@@ -94,7 +94,7 @@ def recursive_chunk_splitter(md_lines):
 
         for chunk in item_text_chunks:# only take the first 20 chunks
             item_metadata['chunk_seq_id'] = chunk_seq_id
-            item_metadata['chunk_id'] = f'{item.metadata["pdf_file_name"]}-{item.metadata["page_number"]}-{item.metadata["line_number"]}-chunk{chunk_seq_id:04d}'
+            item_metadata['line_id'] = f'{item.metadata["pdf_file_name"]}-{item.metadata["page_number"]}-{item.metadata["line_number"]}-chunk{chunk_seq_id:04d}'
             copy_metadata = item_metadata.copy()
             chunks_with_metadata.append(Document(page_content=chunk, metadata=copy_metadata))
             chunk_seq_id += 1
@@ -159,6 +159,7 @@ def insert_metadata(markdown_lines, page_obj, has_images, pdf_file_name, prev_he
         line.metadata['page_count'] = page_count
         line.metadata['chapter_name'] = chapter_name
         line.metadata['chapter_number'] = chapter_number
+        line.metadata['page_id'] = f'{pdf_file_name}-{page_obj["metadata"]["page"]}'
 
     return markdown_lines, prev_header
 
@@ -215,6 +216,7 @@ def process_pdf(pdf_file, file_path, page_nums=None, output_folder_path=None, fi
     )
 
     for page in md_output:
+        # rprint(f"Processing page {page}")
         # Extract images
         if len(page['images']) > 0:
             has_images = save_pdf_imgs(pdf_file, page['metadata']['page'], output_folder_path, file_name_minus_ext)
@@ -227,6 +229,7 @@ def process_pdf(pdf_file, file_path, page_nums=None, output_folder_path=None, fi
         page_lines = split_into_paragraphs(words, text)
         # Convert page lines to markdown
         md_lines = markdown_chunk_splitter(page_lines)
+
         # Insert line number, page number into metadata
         md_lines, prev_header = insert_metadata(md_lines, page, has_images, file_name_minus_ext, prev_header)
         # Split markdown into chunks
@@ -254,7 +257,8 @@ def param_insert(pdf_obj_instance):
             'pageCount': pdf_obj_instance.metadata['page_count'],
             'chapterName': pdf_obj_instance.metadata['chapter_name'],
             'chapterNumber': pdf_obj_instance.metadata['chapter_number'],
-            'chunkId': pdf_obj_instance.metadata['chunk_id'],
+            'pageId': pdf_obj_instance.metadata['page_id'],
+            'lineId': pdf_obj_instance.metadata['line_id'],
             'chunkSeqId': pdf_obj_instance.metadata['chunk_seq_id'],
             'text': pdf_obj_instance.page_content
         }

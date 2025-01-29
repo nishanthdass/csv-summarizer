@@ -1,4 +1,5 @@
 import React from 'react';
+import agentSketch from '../assets/agent-sketch.jpg';
 
 const AboutProject: React.FC = () => {
   return (
@@ -45,11 +46,9 @@ const AboutProject: React.FC = () => {
           
           <ul>
           <p> 
-            <span className='highlight-red'>
-            <li>Guides users through the data analytics process, helping them normalize, clean, and prepare data for modeling.</li>
-            <li>Provides visualizations to aid user understanding and assist in selecting the right model for their use case.</li>
-            <li>Runs predictive models and provides detailed metrics for evaluation.</li>
-            </span>
+            <li><span className='highlight-red'>Guides users through the data analytics process, helping them normalize, clean, and prepare data for modeling.</span></li>
+            <li><span className='highlight-red'>Provides visualizations to aid user understanding and assist in selecting the right model for their use case.</span></li>
+            <li><span className='highlight-red'>Runs predictive models and provides detailed metrics for evaluation.</span></li>
           </p>
           </ul>
 
@@ -60,6 +59,7 @@ const AboutProject: React.FC = () => {
       <p>
         Behind the scenes, a multi-agent architecture powers these features, ensuring seamless collaboration between different components. This project utilizes agents (nodes) and conditions (edges) that make up a graph in Langgraph, with multiple agents working collaboratively:
       </p>
+      <img src={agentSketch} alt="Agent Sketch" className='agent-sketch-img'/>
       <table border={1}>
         <thead>
           <tr>
@@ -69,20 +69,20 @@ const AboutProject: React.FC = () => {
         </thead>
         <tbody>
           <tr>
+            <td>🤖 <strong>Supervisor Agent</strong></td>
+            <td>Manages communication and task allocation among agents, ensuring efficient data processing and interaction for the user.</td>
+          </tr>
+          <tr>
             <td>📝 <strong>SQL Agent</strong></td>
             <td>Automatically generates SQL queries based on user prompts and interactions, working with other agents to retrieve relevant data for analysis and summarization.</td>
           </tr>
           <tr>
-            <td>📈 <strong>Analytics Agent</strong></td>
+            <td>📈 <strong>Data Analytics Agent</strong></td>
             <td>Conducts data analysis and predictive modeling, providing insights on trends, pricing, and predictions, while guiding users in model training and evaluation.</td>
           </tr>
           <tr>
-            <td>📚 <strong>PDF Reader Agent</strong></td>
+            <td>📚 <strong>PDF Agent</strong></td>
             <td>Interprets PDFs and enhances responses with context and insights. Supports Q&A and image retrieval tasks.</td>
-          </tr>
-          <tr>
-            <td>🤖 <strong>Supervisor Agent</strong></td>
-            <td>Manages communication and task allocation among agents, ensuring efficient data processing and interaction for the user.</td>
           </tr>
         </tbody>
       </table>

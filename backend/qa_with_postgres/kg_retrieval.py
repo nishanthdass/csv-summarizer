@@ -60,27 +60,3 @@ def kg_retrieval_window(pdf_name):
 
     return retriever_window
 
-# chain_window = RetrievalQAWithSourcesChain.from_chain_type(
-#     ChatOpenAI( temperature=0,
-#                 openai_api_key=openai_var.openai_api_key,
-#                 openai_api_base=openai_var.openai_endpoint,
-#                 model=openai_var.openai_model
-#                 ), 
-#     chain_type="stuff", 
-#     retriever=kg_retrieval_window(),
-#     return_source_documents=True
-# )
-
-
-
-
-# def ask_question_window(question):
-#     answer = chain_window(
-#     {"question": question},
-#     return_only_outputs=True,
-#     )
-#     print(textwrap.fill(answer["answer"]))
-
-#     print("\nSource Documents:")
-#     rprint(answer)
-

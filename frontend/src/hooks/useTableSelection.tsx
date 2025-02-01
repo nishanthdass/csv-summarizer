@@ -4,6 +4,7 @@ import { useDataContext } from '../context/useDataContext';
 import { TableCellContextObject } from '../utilities/TableEntity';
 import { useFetchDataDatabase } from './fetch_hooks/useFetchDataDatabase';
 import { useFileSidePanelOperations } from './useFileSidePanelOperations';
+import { set } from 'lodash';
 
 export const useTableSelection = () => {
   const { fetchRunSQLQuery } = useFetchDataDatabase();
@@ -11,246 +12,249 @@ export const useTableSelection = () => {
   const { loadTableFromDatabase } = useFileSidePanelOperations();
   // Handle Column Click
 
+  if (!currentTableName) {
+    return {
+      handleColumnClick: () => {},
+      handleCellClick: () => {},
+      handleRowClick: () => {},
+    };
+  }
+
+  const tableHeader = currentTable?.data.header || [];
+
+  const currentSelection = tableSelections[currentTableName] || {
+      selectedCells: [],
+      selectedRows: [],
+      selectedColumns: [],
+    };
 
 
-  const handleColumnClick = (column: string, columnIndex: number) => {
-    
+  
+  // Handle Column Click
+  const handleColumnClick = (
+    columnIndex: number, 
+    columnName: string, page: 
+    number
+  ) => {
+    insertOrRemoveColumn(columnIndex, columnName, page);
+  };
+
+
+  // Handle Row Click
+  const handleRowClick = (
+    ctid: string, 
+  ) => {
+    insertOrRemoveRow(ctid);
+  };
+
+  
+  // Handle Cell Click
+  const handleCellClick = (
+    ctid: string,
+    value: any,
+    columnName: string | null,
+  ) => {
+    insertOrRemoveCell(ctid, value, columnName);
+  };
+
+  const handleSqlQuerySelections = (data: any[]) => {
     if (!currentTableName) {
       console.warn('No current table selected.');
       return;
     }
-
-    const currentSelection = tableSelections[currentTableName] || {
-      selectedCells: [],
-      selectedRows: [],
-      selectedColumns: [],
-    };
-
-    const isAlreadySelected = currentSelection.selectedColumns.some(
-      (col) => col.column === column && col.columnIndex === columnIndex
-    );
-
-    const updatedSelectedColumns = isAlreadySelected
-      ? currentSelection.selectedColumns.filter(
-          (col) => !(col.column === column && col.columnIndex === columnIndex)
-        )
-      : [...currentSelection.selectedColumns, { column, columnIndex }];
-
-    setTableSelections((prevSelections) => ({
-      ...prevSelections,
-      [currentTableName]: {
-        ...currentSelection,
-        selectedColumns: updatedSelectedColumns,
-      },
-    }));
-  };
-
-
-  interface SetCellResponse {
-    success: boolean;
-    data: string[];
-  }
-
   
-  const handleChatQueryTableSelect = async (query: string, tableName: string) => {
-    if (!currentTableName || !currentTable) {
-      console.warn("No current table selected.");
-      return;
-    }
+    data.forEach((retrievedData) => {
+      // console.log(retrievedData);
+      const keys = Object.keys(retrievedData);
+      const length = keys.length;
   
-    try {
-      // Fetch data matching your query
-      const result = await fetchRunSQLQuery(query, tableName);
-      const toBeSelectedCells = result.data;
-  
-      setTableSqlSelections((prevSelections) => {
-        const oldSelection = prevSelections[currentTableName] || {
-          selectedCells: [],
-          selectedRows: [],
-          selectedColumns: [],
-        };
-
-        let updatedSelectedRows = [...oldSelection.selectedRows];
-        let updatedSelectedCells = [...oldSelection.selectedCells];
-  
-        for (let i = 0; i < toBeSelectedCells.length; i++) {
-          const sqlData = toBeSelectedCells[i];
-          if (!sqlData) continue;
-  
-          const keys = Object.keys(sqlData);
-          if (keys.length === 1 && keys.includes("ctid")) {
-
-            const ctid = sqlData.ctid;
-
-            const isRowAlreadySelected = updatedSelectedRows.some((row) => row.ctid === ctid );
-            const isCellAlreadySelected = updatedSelectedCells.some((cell) => cell.ctid === ctid);
-
-            if (!isRowAlreadySelected) {
-              updatedSelectedRows = [...updatedSelectedRows, { ctid }];
-            }
-          } else if (keys.length > 1 && keys.includes("ctid")) {
-            console.log("Keys: ", keys);
-            console.log("SQL Data: ", sqlData);
-            const ctid = sqlData.ctid;
-            for (let j = 0; j < keys.length; j++) {
-              const key = keys[j];
-              const value = sqlData[key];
-              if (key !== "ctid") {
-                updatedSelectedCells = [...updatedSelectedCells, { column: key, ctid: ctid, row: null, value: value, tenstackRowNumber: null }];
-              }
-            }
-
-          }
+      if (length === 1 && keys[0] === 'ctid') {
+        const ctid = retrievedData.ctid;
+        if (isRowSelected(ctid)) {
+          console.log('Row already selected');
+        } else {
+          insertOrRemoveRow(ctid);
         }
+        // insert in selected rows
+      } else {
+        keys.forEach((key) => {
+          if (key !== 'ctid') {
+            const ctid = retrievedData.ctid;
+            const columnName = `${currentTableName}_${key}`;
+            const value = retrievedData[key];
+            // insert in selected cells
+            if (isCellSelected(ctid, value, columnName)) {
+              console.log('Cell already selected');
+            } else {
+              insertOrRemoveCell(ctid, value, columnName);
+            }
+          }
+        });
+      }
+    });
+  };
   
+  const isRowSelected = (ctid: string) => currentSelection.selectedRows.some((row) => row.ctid === ctid)
+  const isCellSelected = (ctid: string, value: any, columName: string | null) => currentSelection.selectedCells.some((cell) => cell.ctid === ctid && cell.value === value && cell.columnName === columName)
+
+
+  const insertOrRemoveColumn = ( columnIndex: number, columnName: string, page: number) => {
+    setTableSelections((prevSelections) => {
+      const oldSelection = prevSelections[currentTableName] || {
+        selectedRows: [],
+        selectedCells: [],
+        selectedColumns: [],
+      };
+
+      const columnAlreadySelected = oldSelection.selectedColumns.some((col) => col.columnIndex === columnIndex && col.columnName === columnName && col.page === page);
+
+      if (columnAlreadySelected) {
+        // Remove column selection
         return {
           ...prevSelections,
           [currentTableName]: {
             ...oldSelection,
-            selectedRows: updatedSelectedRows,
-            selectedCells: updatedSelectedCells,
+            selectedColumns: oldSelection.selectedColumns.filter((col) => col.columnIndex !== columnIndex && col.columnName !== columnName || col.page !== page),
           },
         };
-      });
-    } catch (error) {
-      console.error(error);
-    }
+      } else {
+        return {
+          ...prevSelections,
+          [currentTableName]: {
+            ...oldSelection,
+            selectedColumns: [...oldSelection.selectedColumns, { columnIndex, columnName, page }],
+          },
+        };
+      }
+    });
+  }
+
+  const insertOrRemoveRow = (ctid: string) => {
+    setTableSelections((prevSelections) => {
+      const oldSelection = prevSelections[currentTableName] || {
+        selectedRows: [],
+        selectedCells: [],
+        selectedColumns: [],
+      };
+  
+      const rowAlreadySelected = oldSelection.selectedRows.some((row) => row.ctid === ctid);
+  
+      if (rowAlreadySelected) {
+        // Remove row selection
+        return {
+          ...prevSelections,
+          [currentTableName]: {
+            ...oldSelection,
+            selectedRows: oldSelection.selectedRows.filter((row) => row.ctid !== ctid),
+          },
+        };
+      } else {
+        // Add row selection
+        return {
+          ...prevSelections,
+          [currentTableName]: {
+            ...oldSelection,
+            selectedRows: [...oldSelection.selectedRows, { ctid }],
+            selectedCells: oldSelection.selectedCells.filter((cell) => cell.ctid !== ctid),
+          },
+        };
+      }
+    });
   };
   
   
 
-  
-  
-  // Handle Cell Click
-  const handleCellClick = (
-    column: string,
-    value: any,
-    ctid: string,
-    row: number,
-    tenstackRowNumber: number
-  ) => {
-    console.log("column: ", column, "value: ", value, "ctid: ", ctid, "row: ", row, "tenstackRowNumber: ", tenstackRowNumber);
-    if (!currentTableName || !currentTable) {
-      console.warn('No current table selected.');
-      return;
-    }
+  const insertOrRemoveCell = (ctid: string, value: any, columnName: string | null ) => {
+    setTableSelections((prevSelections) => {
+      const oldSelection = prevSelections[currentTableName] || {
+        selectedRows: [],
+        selectedCells: [],
+        selectedColumns: [],
+      };
+      const cellAlreadySelected = oldSelection.selectedCells.some((cell) => cell.ctid === ctid && cell.value === value && cell.columnName === columnName);
 
-    const currentSelection = tableSelections[currentTableName] || {
-      selectedCells: [],
-      selectedRows: [],
-      selectedColumns: [],
-    };
+      const numberOfSelectedCells = oldSelection.selectedCells.filter((cell) => cell.ctid === ctid).length;
+      const headers = Object.keys(currentTable?.data.header || {});
+      const lenHeader = Object.keys(currentTable?.data.header || {}).length;
+      const rowAlreadySelected = oldSelection.selectedRows.some((row) => row.ctid === ctid);
 
-    const isAlreadySelected = currentSelection.selectedCells.some(
-      (cell) => cell.column === column && cell.ctid === ctid
-    );
-
-    const updatedSelectedCells = isAlreadySelected
-      ? currentSelection.selectedCells.filter(
-          (cell) => !(cell.column === column && cell.ctid === ctid)
-        )
-      : [...currentSelection.selectedCells, { column, ctid, row, value, tenstackRowNumber }];
-
-    // Now, determine if the entire row should be selected
-    const getRow = currentTable.data.rows.find((r) => r.ctid === ctid);
-
-    let updatedSelectedRows = currentSelection.selectedRows;
-
-    if (getRow) {
-      // Total cells in the row excluding 'ctid'
-      const totalCellsInRow = Object.keys(getRow).length - 1;
-
-      // Count selected cells in the row
-      const selectedCellsInRow = updatedSelectedCells.filter(
-        (cell) => cell.ctid === ctid
-      ).length;
-
-      if (selectedCellsInRow === totalCellsInRow) {
-        // All cells in the row are selected, add the row to selectedRows
-        const isRowAlreadySelected = currentSelection.selectedRows.some((r) => r.ctid === ctid);
-        if (!isRowAlreadySelected) {
-          updatedSelectedRows = [...currentSelection.selectedRows, { ctid }];
+      if (!rowAlreadySelected) {
+        if (cellAlreadySelected) { 
+          console.log('Remove Cell: ', ctid, value, columnName);
+          const selectedCells = oldSelection.selectedCells.filter((cell) => cell.columnName !== columnName || cell.ctid !== ctid);
+          console.log('selectedCells: ', selectedCells);
+          return {
+            ...prevSelections,
+            [currentTableName]: {
+              ...oldSelection,
+              selectedCells: oldSelection.selectedCells.filter((cell) => cell.columnName !== columnName || cell.ctid !== ctid),
+            },
+          };
+        }
+        else {
+          console.log('Insert Cell');
+          return {
+            ...prevSelections,
+            [currentTableName]: {
+              ...oldSelection,
+              selectedCells: [...oldSelection.selectedCells, { ctid, value, columnName }],
+            },
+          };
         }
       } else {
-        // Not all cells are selected, remove the row from selectedRows if it's there
-        updatedSelectedRows = currentSelection.selectedRows.filter((r) => r.ctid !== ctid);
+        return prevSelections;
       }
-    }
+    });
 
-    // Update the tableSelections
-    setTableSelections((prevSelections) => ({
-      ...prevSelections,
-      [currentTableName]: {
-        ...currentSelection,
-        selectedCells: updatedSelectedCells,
-        selectedRows: updatedSelectedRows,
-      },
-    }));
+    setTableSelections((prevSelections) => {
+      const oldSelection = prevSelections[currentTableName] || {
+        selectedRows: [],
+        selectedCells: [],
+        selectedColumns: [],
+      };
+
+      const cellAlreadySelected = oldSelection.selectedCells.some((cell) => cell.ctid === ctid && cell.value === value && cell.columnName === columnName);
+
+      const numberOfSelectedCells = oldSelection.selectedCells.filter((cell) => cell.ctid === ctid).length;
+      const headers = Object.keys(currentTable?.data.header || {});
+      const lenHeader = Object.keys(currentTable?.data.header || {}).length;
+      const rowAlreadySelected = oldSelection.selectedRows.some((row) => row.ctid === ctid);
+
+      // retrun oldSelection
+      if (numberOfSelectedCells === lenHeader) {
+        console.log("Select Row and remove cells");
+        return {
+          ...prevSelections,
+          [currentTableName]: {
+            ...oldSelection,
+            selectedRows: [...oldSelection.selectedRows, { ctid }],
+            selectedCells: oldSelection.selectedCells.filter((cell) => cell.ctid !== ctid),
+          },
+      }
+      }else if (rowAlreadySelected && numberOfSelectedCells === 0) {
+          console.log('Remove Row and Insert Cells');
+          const newCells = currentTable?.data.header 
+              ? Object.entries(currentTable.data.header).map(([columnName]) => ({
+                  ctid,
+                  value: currentTable.data.rows.find((row: any) => row.ctid === ctid)[columnName], 
+                  columnName: `${currentTableName}_${columnName}` 
+                }))
+                .filter((cell) => cell.columnName !== columnName)
+              : [];
+      
+          return {
+            ...prevSelections,
+            [currentTableName]: {
+              ...oldSelection,
+              selectedRows: oldSelection.selectedRows.filter((row) => row.ctid !== ctid),
+              selectedCells: [...oldSelection.selectedCells, ...newCells],
+            },
+          };
+      }
+      return prevSelections;
+    })
   };
-
-  // Handle Row Click
-  const handleRowClick = (ctid: string, row: number, tenstackRowNumber: number) => {
-    if (!currentTableName || !currentTable) {
-      console.warn('No current table selected.');
-      return;
-    }
-
-    const currentSelection = tableSelections[currentTableName] || {
-      selectedCells: [],
-      selectedRows: [],
-      selectedColumns: [],
-    };
-
-    console.log("handleRowClick currentSelection: ", currentSelection);
-
-    const isRowAlreadySelected = currentSelection.selectedRows.some(
-      (row) => row.ctid === ctid
-    );
-
-    const getRow = currentTable.data.rows.find((r) => r.ctid === ctid);
-
-    let updatedSelectedRows = currentSelection.selectedRows;
-    let updatedSelectedCells = currentSelection.selectedCells;
-
-    if (getRow && !isRowAlreadySelected) {
-      // Add the ctid of the row to the selected rows array
-      updatedSelectedRows = [...currentSelection.selectedRows, { ctid }];
-
-      // Add all cells of the row (if not already selected)
-      const newCells = Object.entries(getRow)
-        .filter(([key]) => key !== 'ctid')
-        .map(([key, value]) => ({
-          column: key,
-          ctid,
-          row,
-          value,
-          tenstackRowNumber,
-        }));
-
-      // Avoid duplicates
-      updatedSelectedCells = [
-        ...currentSelection.selectedCells.filter((cell) => cell.ctid !== ctid),
-        ...newCells,
-      ];
-    } else {
-      // Remove the ctid of the row from the selected rows array
-      updatedSelectedRows = currentSelection.selectedRows.filter((r) => r.ctid !== ctid);
-      // Remove all cells of the row
-      updatedSelectedCells = currentSelection.selectedCells.filter((cell) => cell.ctid !== ctid);
-    }
-
-    // Update the tableSelections
-    setTableSelections((prevSelections) => ({
-      ...prevSelections,
-      [currentTableName]: {
-        ...currentSelection,
-        selectedRows: updatedSelectedRows,
-        selectedCells: updatedSelectedCells,
-      },
-    }));
-  };
-
   
 
-  return { handleColumnClick, handleCellClick, handleRowClick, handleChatQueryTableSelect };
+  return { handleColumnClick, handleCellClick, handleRowClick , handleSqlQuerySelections};
 };

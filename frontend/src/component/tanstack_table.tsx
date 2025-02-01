@@ -34,124 +34,12 @@ const TenstackTable = () => {
       selectedColumns: [],
     };
 
-    const currentSqlSelection = tableSqlSelections[currentTableName || ''] || {
-      selectedCells: [],
-      selectedRows: [],
-      selectedColumns: [],
-    };
-
-
 
     useEffect(() => {
-      const selectedSqlRows = currentSqlSelection.selectedRows.map((row) => row.ctid);
-      const selectedSqlCells = currentSqlSelection.selectedCells;
-
-      for (const ctid of selectedSqlRows) {
-        const getRowIndex = currentTable?.data.rows.findIndex((row) => row.ctid === ctid);
-        if (getRowIndex !== undefined && getRowIndex !== -1 && currentTable) {
-          const tenstackRowNumber =
-            getRowIndex + (currentTable.data.page - 1) * currentTable.data.page_size;
-          const foundRow = currentTable.data.rows[getRowIndex];
-          const isRowAlreadySelected = currentSelection.selectedRows.some(
-            (row) => row.ctid === ctid
-          );
-  
-          if (!isRowAlreadySelected && foundRow) {
-            // Build the array of cell objects for the row
-            const newCells = Object.entries(foundRow)
-              .filter(([key]) => key !== 'ctid')
-              .map(([column, value]) => ({
-                column,
-                ctid,
-                row: getRowIndex,
-                value,
-                tenstackRowNumber,
-              }));
-  
-            if (newCells.length > 0 && ctid) {
-                setTableSelections((prevTableSelections) => {
-                  const oldTableSelection =
-                    prevTableSelections[currentTableName || ''] || {
-                      selectedCells: [],
-                      selectedRows: [],
-                      selectedColumns: [],
-                    };
-  
-                  return {
-                    ...prevTableSelections,
-                    [currentTableName || '']: {
-                      selectedCells: [
-                        ...oldTableSelection.selectedCells,
-                        ...newCells,
-                      ],
-                      selectedRows: [
-                        ...oldTableSelection.selectedRows,
-                        { ctid },
-                      ],
-                      selectedColumns: [...oldTableSelection.selectedColumns],
-                    },
-                  };
-                });
-            }
-          }
-        }
-      }
-
-      console.log("selectedSqlCells: ", selectedSqlCells);
-
-      interface Cell {
-        column: string;
-        ctid: string;
-        row: number;
-        value: any;
-        tenstackRowNumber: number;
-      }
+      if (!tableSelections) return;
+      if (!currentTable) return;
       
-      const newCells: Cell[] = [];
-
-      for (const cell of selectedSqlCells) {
-        const { column, ctid, row, value, tenstackRowNumber } = cell;
-
-        const getRowIndex = currentTable?.data.rows.findIndex((row) => row.ctid === ctid);
-        if (getRowIndex !== undefined && getRowIndex !== -1 && currentTable) {
-          const tenstackRowNumber = getRowIndex + (currentTable.data.page - 1) * currentTable.data.page_size;
-          const foundRow = currentTable.data.rows[getRowIndex];
-          const isCellAlreadySelected = currentSelection.selectedCells.some(
-            (cell) => cell.ctid === ctid
-          );
-  
-          if (!isCellAlreadySelected && foundRow) {
-            // Build the array of cell objects for the row
-            const getSqlCell = {
-              column: column ?? '', 
-              ctid: ctid ?? '',
-              row: getRowIndex,
-              value,
-              tenstackRowNumber,
-            };
-            newCells.push(getSqlCell);
-          }
-        }
-      }
-      setTableSelections((prevTableSelections) => {
-        const oldTableSelection =
-          prevTableSelections[currentTableName || ''] || {
-            selectedCells: [],
-            selectedRows: [],
-            selectedColumns: [],
-          };
-      
-        return {
-          ...prevTableSelections,
-          [currentTableName || '']: {
-            selectedCells: [...oldTableSelection.selectedCells, ...newCells],
-            selectedRows: [...oldTableSelection.selectedRows],
-            selectedColumns: [...oldTableSelection.selectedColumns],
-          },
-        };
-      });
-
-    }, [currentSqlSelection, currentTable]);
+    }, [tableSelections])
 
     const zoomLevel = useMemo(() => {
         if (currentTable?.name) {
@@ -176,7 +64,7 @@ const TenstackTable = () => {
 
         return [
         columnHelper.display({
-            id: 'rowNumber',                                              // Insert column to show row number
+            id: 'rowNumber',
             header: '#',
             cell: (info) => info.row.index + (currentTable.data.page - 1) * currentTable.data.page_size + 1,
             enableResizing: false,
@@ -193,8 +81,6 @@ const TenstackTable = () => {
         ];
     }, [currentTable]);
 
-
-    // Initialize react-table
     const reactTable = useReactTable({
       data,
       columns,
@@ -220,28 +106,35 @@ const TenstackTable = () => {
       isRowNumberColumn?: boolean
     ): string => {
       if (!currentTable) return '';
-    
-      const isRowSelected = ctid
-        ? currentSelection.selectedRows.some((row) => row.ctid === ctid)
+
+    let isRowSelected = false;
+    if (ctid) {
+      const selectedRowData = currentSelection.selectedRows.find((row) => row.ctid === ctid);
+      isRowSelected = Boolean(selectedRowData);
+      if (isRowSelected && selectedRowData && !isRowNumberColumn) {
+        return 'selected-cell';
+      } else if (isRowSelected && selectedRowData && isRowNumberColumn) {
+        return 'selected-row';
+      }
+    }
+  
+    const isColumnSelected = columnId
+      ? currentSelection.selectedColumns.some((col) => col.columnName === columnId)
+      : false;
+  
+    const isCellSelected =
+      columnId && ctid
+        ? currentSelection.selectedCells.some(
+            (cell) =>
+              cell.columnName === columnId &&
+              cell.ctid === ctid
+          )
         : false;
-    
-      const isColumnSelected = columnId
-        ? currentSelection.selectedColumns.some((col) => col.column === revertId(columnId, currentTable.name))
-        : false;
-    
-      const isCellSelected =
-        columnId && ctid
-          ? currentSelection.selectedCells.some(
-              (cell) =>
-                cell.column === revertId(columnId, currentTable.name) &&
-                cell.ctid === ctid
-            )
-          : false;
-    
-      // Determine the class based on selection state
-      if (isCellSelected) return 'selected-cell';
-      if (isRowSelected) return 'selected-row';
-      if (isColumnSelected) return 'selected-column';
+
+  
+    if (isCellSelected) return 'selected-cell';
+    if (isRowSelected) return 'selected-row';
+    if (isColumnSelected) return 'selected-column';
     
       // Default classes for odd/even rows
       if (isRowNumberColumn === undefined) return '';
@@ -279,7 +172,7 @@ const TenstackTable = () => {
                     className={cellClassName}
                     onClick={() => {
                       if (!isRowNumberColumn && currentTable) {
-                        handleColumnClick(revertId(header.id, currentTable.name), header.index);
+                        handleColumnClick(header.index, header.id, currentTable.data.page);
                       }
                     }}
                     colSpan={header.colSpan}
@@ -317,9 +210,9 @@ const TenstackTable = () => {
             {reactTable.getRowModel().rows.map((row) => (
               <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => {
+                  // console.log(cell);
                   const ctid = cell.row.original.ctid;
                   const columnId = cell.column.id;
-                  const tenstackRowNumber = cell.row.original.tenstackRowNumber;
                   const isRowNumberColumn = columnId === 'rowNumber';
                   const cellClassName = getCellClass(columnId, row.index, ctid, isRowNumberColumn);
 
@@ -328,9 +221,9 @@ const TenstackTable = () => {
                       key={cell.id}
                       onClick={() => {
                         if (!isRowNumberColumn && currentTable) {
-                          handleCellClick(revertId(columnId, currentTable.name), cell.getValue(), ctid, row.index, tenstackRowNumber);
+                          handleCellClick(ctid, cell.getValue(), cell.column.id );
                         } else if (isRowNumberColumn && currentTable) {
-                          handleRowClick(ctid, row.index, tenstackRowNumber);
+                          handleRowClick(ctid);
                         }
                       }}
                       className={cellClassName}

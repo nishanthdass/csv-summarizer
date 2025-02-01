@@ -21,21 +21,26 @@ export type TableChatDataObject = {
 }
 
 export type TableColumnContextObject = {
-  column: string;
   columnIndex: number;
-};
-
-export type TableCellContextObject = {
-  column: string | null;
-  ctid: string | null;
-  row: number | null;
-  value: any | null;
-  tenstackRowNumber: number | null;
+  columnName: string;
+  page: number;
 };
 
 export type TableRowContextObject = {
   ctid: string;
 };
+
+export type TableCellContextObject = {
+  ctid: string | null;
+  value: any | null;
+  columnName: string | null;
+};
+
+export interface SetCellResponse {
+  success: boolean;
+  data: string[];
+}
+
 
 export default class TableEntity {
   name: string;

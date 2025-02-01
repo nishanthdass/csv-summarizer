@@ -51,9 +51,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [currentPdf, setCurrentPdf] = useState<PdfEntity | null>(null);
   const get_pdf = (pdfName: string): PdfEntity | undefined => get(pdfs, pdfName);
 
-  useEffect(() => {
-    console.log(tableSelections);
-  }, [tableSelections]);
+  // useEffect(() => {
+  //   console.log(tableSelections);
+  // }, [tableSelections]);
 
 
   return (

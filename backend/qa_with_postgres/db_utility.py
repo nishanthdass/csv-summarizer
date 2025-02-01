@@ -42,20 +42,13 @@ def run_query(table_name: str, query: str):
     columns = cur.description
     values = cur.fetchall()
 
-    rprint("column_names: ", column_names)
-    rprint("columns: ", columns)
-
     llm_query_result = [dict(zip([col[0] for col in columns if col], row)) for row in values]
 
-    rprint("llm_query_result: ", llm_query_result)
     filtered_llm_query_result = []
 
     for row in llm_query_result:
-        rprint("row: ", row)
         row = {key: value for key, value in row.items() if key == 'ctid' or (key in column_names)}
         filtered_llm_query_result.append(row)
-
-    rprint("filtered_llm_query_result: ", filtered_llm_query_result)
 
 
     cur.close()

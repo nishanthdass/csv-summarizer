@@ -1,13 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Fragment } from 'react';
 import { useDataContext } from '../context/useDataContext';
 import { useTasks } from '../context/useTaskContext';
 import { useChatWebSocket } from '../context/useChatWebsocket';
 import { useFetchDataDatabase } from '../hooks/fetch_hooks/useFetchDataDatabase';
 import { useTableSelection } from '../hooks/useTableSelection';
 
+
 const ChatbotTab = () => {
+const { handleSqlQuerySelections } = useTableSelection();
 const { currentTable } = useDataContext();
-const { handleChatQueryTableSelect } = useTableSelection();
+
+const { fetchRunSQLQuery } = useFetchDataDatabase();
 const { tasks } = useTasks();
 
 const { isConnected, sendMessage, messages } = useChatWebSocket();
@@ -34,7 +37,8 @@ useEffect(() => {
 const handleClickSql = async(message: string, table_name: string) => {
     if (isConnected) {
         try {
-            handleChatQueryTableSelect(message, table_name);
+            const response = await fetchRunSQLQuery(message, table_name);
+            handleSqlQuerySelections?.(response.data);
         } catch (error) {
             console.error(error);
         }
@@ -72,19 +76,34 @@ return (
             <strong>Status:</strong> {isConnected ? "Connected" : "Disconnected"}
         </div>
         <div className="chat-messages">
-            {messages.map((message, index) => 
+            
+            {messages.map((message, index) =>
+                
                 typeof message.modified_query === 'string' && message.modified_query.length > 0  ? (
                     <span key={index} className={`message-line ${message.role}`} >
                     <strong>{message.role}:</strong>
-                    {message.message === "" ? animatedDots : "  " + message.message}
+                    
+                    {message.message === "" ? (
+                        animatedDots
+                    ) : (
+                        <span dangerouslySetInnerHTML={{ __html: message.message }} />
+                    )}
+                    
                     <p>
                     <button className="sql-query-button" onClick={() => message.modified_query && handleClickSql(message.modified_query, message.table_name)}>{message.modified_query_label}</button>
                     </p>
+                    <br/>
+                    <br/>
+                    {message.role === "User" ?(""): (<div className='chat-time'>Response time: {String(message.time)} seconds</div>)}
                     </span>
                 ) : (
                 <span key={index} className={`message-line ${message.role}`} >
                 <strong>{message.role}:</strong>
+                
                 {message.message === "" ? animatedDots : "  " + message.message}
+                <br/>
+                <br/>
+                {message.role === "User" ?(""): (<div className='chat-time'>Response time: {String(message.time)} seconds</div>)}
                 </span>
                 )
             )}

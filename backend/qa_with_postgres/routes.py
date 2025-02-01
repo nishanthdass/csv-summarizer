@@ -302,7 +302,6 @@ async def sql_query(request: Request):
 
     try:
         body = await request.json()
-        rprint(body)
         result = run_query(body['table_name'], body['query'])
         return JSONResponse(content={"success": True, "data": result})
 

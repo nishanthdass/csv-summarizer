@@ -1,6 +1,7 @@
 import os
 import uuid
 import asyncio
+import math
 from fastapi import WebSocket
 from typing import Sequence, Dict, List, Optional
 from typing_extensions import Annotated, TypedDict
@@ -26,6 +27,8 @@ from qa_with_postgres.kg_retrieval import kg_retrieval_window
 from langchain_core.prompts import PromptTemplate
 from langchain.callbacks.base import AsyncCallbackHandler
 from langchain.callbacks.manager import AsyncCallbackManager
+import time# Start timer
+
 
 # Set up tracing for debugging
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
@@ -36,6 +39,7 @@ postgres_var = LoadPostgresConfig()
 model = ChatOpenAI(model="gpt-4o", temperature=0)
 db = LoadPostgresConfig()
 
+time_table = { "supervisor": 0, "pdf_agent": 0, "pdf_validator": 0, "call_sql_agent": 0, "sql_agent": 0, "sql_validator": 0, "data_analyst": 0, "human_input": 0, "cleanup": 0}
 
 tasks = {}
 active_websockets = {}
@@ -109,8 +113,7 @@ def get_all_columns_and_types(table_name, db):
 # --- Define Node Functions ---
 async def supervisor_node(state: MessageState) -> MessageState:
     """Supervisor Node to route questions to agents."""
-    print(f"Supervisor Node 🤖")
-
+    time_table["supervisor"] = time.time()
     state["current_agent"] = "supervisor"
     if state["next_agent"] != "supervisor":
         return {"messages": state["messages"], "next": state["next"]}
@@ -182,13 +185,10 @@ async def supervisor_node(state: MessageState) -> MessageState:
 
 
     try:
-        rprint("Invoking chain")
         response = await chain.ainvoke(inputs)
     except Exception as e:
         logging.error(f"Error invoking chain: {e}")
         response = None
-
-    rprint("Proceeding")
 
     state["messages"].append(AIMessage(content=response["answer"]))
     state["answer"] = AIMessage(content=response["answer"])
@@ -200,12 +200,13 @@ async def supervisor_node(state: MessageState) -> MessageState:
         return state
 
     if response["next_agent"] == "sql_agent" or response["next_agent"] == "data_analyst" or response["next_agent"] == "pdf_agent":
+        rprint("Supervisor time: ", time_table["supervisor"])
         return state
     
 
 async def pdf_agent_node(state: MessageState) -> MessageState:
     """PDF Reader Agent Node (pdf_agent_node -> __end__)"""
-    print("PDF Reader Agent Node 📚")
+    time_table["pdf_agent"] = time.time()
 
     state["current_agent"] = "pdf_reader_agent"
     user_message = state["question"].content
@@ -246,8 +247,6 @@ async def pdf_agent_node(state: MessageState) -> MessageState:
         return_only_outputs=True,
         )
     
-    # rprint("answer: ", answer)
-    
     result_message = AIMessage(content=answer["answer"])
     state["answer"] = result_message
     state["messages"].append(result_message)
@@ -258,7 +257,7 @@ async def pdf_agent_node(state: MessageState) -> MessageState:
 
 async def pdf_validator_node(state: MessageState) -> MessageState:
     """PDF Validator Node (pdf_agent_node -> pdf_validator_node -> __end__)"""
-    print("PDF Validator Node 📚")
+    start_time = time.time()
 
     state["current_agent"] = "pdf_validator"
 
@@ -295,15 +294,14 @@ async def pdf_validator_node(state: MessageState) -> MessageState:
     state["answer"] = AIMessage(content=response["answer"])
     state["next_agent"] = response["next_agent"]
 
+    end_time = time.time()
+    time_table["pdf_validator"] = (end_time - start_time)
+
     return state
 
 
-
-
-
-
-
 async def call_sql_agent(state: MessageState) -> MessageState:
+
     db_for_table = SQLDatabase.from_uri(postgres_var.db_url, include_tables=[state["table_name"]])
     toolkit = SQLDatabaseToolkit(db=db_for_table, llm=model)
     sql_agent_for_table = create_sql_agent(llm=model, toolkit=toolkit, agent_type="openai-tools", verbose=False, agent_executor_kwargs={"return_intermediate_steps": True})
@@ -315,13 +313,12 @@ async def call_sql_agent(state: MessageState) -> MessageState:
 
 async def sql_agent_node(state: MessageState) -> MessageState:
     """SQL Agent Node (SQL Agent Node -> SQL Validator -> __end__)"""
-    print(f"SQL Agent Node 👾")
+    time_table["sql_agent"] = time.time()
 
-    state["current_agent"] = "sql_agent"
     sql_result = await call_sql_agent(state)
+    state["current_agent"] = "sql_agent"
     intermediate_steps = sql_result.get("intermediate_steps", [])
     intermediate_steps = format_to_openai_tool_messages(intermediate_steps)
-    rprint(state["columns_and_types"])
 
     query_arg = None
     for step in intermediate_steps:
@@ -345,13 +342,12 @@ async def sql_agent_node(state: MessageState) -> MessageState:
             "1. If it is an aggregate query, modify the query to include 'ctid' by using 'GROUP BY' appropriately. Make sure to include the valid column name/names from {columns_and_types} and use llm_count as a variable for COUNT.\n"
             "2. If it is not an aggregate query, modify the query to include 'ctid' dynamically in the SELECT clause along with the column name/names from {columns_and_types}.\n"
             "3. Make sure to choose the approprate ctid column based on the table schema and the user's question.\n"
-            "4. Create a label(max 4 words) with the word select. For example, 'Select all items', 'Select the items', etc..\n\n"
+            "4. Create a label(max 7 words) with the word select. For example, 'Select all items', 'Select the items', etc..\n\n"
             "Return in json format with original query in 'answer', modified query in 'modified_query' and a label in 'modified_query_label':\n"
-            "{{\"current_agent\": \"sql_agent\", \"next_agent\": \"sql_agent\", \"question\": \"None\", \"answer\": \"<_START_> {query_arg} <_END_>\", \"modified_query\": \"Modified Query\", \"modified_query_label\": \"modified query label\"}}\n\n")
+            "{{\"current_agent\": \"sql_agent\", \"next_agent\": \"sql_agent\", \"question\": \"None\", \"answer\": \"<_START_> {answer} \\n\\n Query: {query_arg} <_END_>\", \"modified_query\": \"Modified Query\", \"modified_query_label\": \"modified query label\"}}\n\n")
         ])
     
     inputs = { "query_arg": query_arg, "answer": sql_result["output"], "question": state["question"].content, "columns_and_types": state["columns_and_types"]}
-    rprint(inputs)
 
     chain = prompt | model | parser
     response = await chain.ainvoke(inputs)
@@ -367,14 +363,14 @@ async def sql_agent_node(state: MessageState) -> MessageState:
     state["messages"].append(AIMessage(content=mod_query_dict))
     state["messages"].append(result_message)
     state["agent_scratchpads"].append(intermediate_steps)
-    state["next_agent"] = "sql_validator"
+    state["next_agent"] = "__end__"
 
     return state
 
 
 async def sql_validator_node(state: MessageState) -> MessageState:
     """SQL Validator Node (SQL Agent Node -> SQL Validator -> __end__)"""
-    print("SQL Validator Node 👾")
+    time_table["sql_validator"] = time.time()
 
     state["current_agent"] = "sql_validator"
 
@@ -400,8 +396,6 @@ async def sql_validator_node(state: MessageState) -> MessageState:
                 "agent_scratchpad": agent_scratchpad,
                 "user_message": user_message}
 
-
-
     chain = prompt | model | parser
 
     response = await chain.ainvoke(inputs)
@@ -416,7 +410,7 @@ async def sql_validator_node(state: MessageState) -> MessageState:
 
 async def data_analyst_node(state: MessageState) -> MessageState:
     """Data Analyst Node ((Data Analyst Node <->  Human Input) -> Cleanup -> __end__)"""
-    print("Data Analyst Node 👾")
+    time_table["data_analyst"] = time.time()
 
     trimmed_messages = trimmer.invoke(state["messages"])
     
@@ -445,7 +439,6 @@ async def data_analyst_node(state: MessageState) -> MessageState:
     chain = prompt | model | parser
     parsed_result = await chain.ainvoke(inputs)
 
-
     if parsed_result["question"] != "":
         state["messages"].append(AIMessage(content=f"{parsed_result["question"]}"))
     state["answer"] = AIMessage(content=f"{parsed_result['answer']}")
@@ -456,12 +449,11 @@ async def data_analyst_node(state: MessageState) -> MessageState:
         print("END OF HUMAN IN THE LOOP")
         state["next_agent"] = parsed_result["next_agent"]
         state["messages"].append(AIMessage(content=f"{parsed_result['answer']}"))
-
         return state
 
 async def human_input(state: MessageState):
     """Human Input Node to get user input and communicate with Data Analyst"""
-    print("Human Input Node 🤠")
+
     human_message = interrupt("human_input")
 
     return {
@@ -475,7 +467,7 @@ async def human_input(state: MessageState):
     }
 
 async def cleanup_node(state: MessageState) -> MessageState:
-    print("Cleanup Node 👾")
+    time_table["cleanup"] = time.time()
     return {"messages": [], "next_agent": "__end__"}
 
 # --- Build the State Graph ---
@@ -494,8 +486,7 @@ workflow.add_node("cleanup", cleanup_node)
 workflow.add_edge(START, "supervisor")
 workflow.add_edge("pdf_agent", "pdf_validator")
 workflow.add_edge("pdf_validator", END)
-workflow.add_edge("sql_agent", "sql_validator")
-workflow.add_edge("sql_validator", END)
+workflow.add_edge("sql_agent", END)
 workflow.add_edge("data_analyst", END)
 workflow.add_edge("human_input", "data_analyst")
 
@@ -627,7 +618,6 @@ async def run_chatbots( session_id: str):
                 "agent_scratchpads": [],
                 "columns_and_types": await manager.get_chatbot_columns_and_types(session_id)
             }
-            rprint("State: ", state)
 
             is_interrupted = False
             while_loop = True
@@ -652,8 +642,9 @@ async def run_chatbots( session_id: str):
                                         "message": "",
                                         "table_name": await manager.get_chatbot_table_name(session_id),
                                         "pdf_name": await manager.get_chatbot_pdf_name(session_id),
-                                        "role": next_agent
+                                        "role": next_agent,
                                     }
+                    rprint("on_chain_start: ", message)
                     await safe_send(message, session_id)
                     logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
                     input_arg = Command(resume=message)
@@ -675,6 +666,7 @@ async def run_chatbots( session_id: str):
                                             "table_name": await manager.get_chatbot_table_name(session_id),
                                             "pdf_name": await manager.get_chatbot_pdf_name(session_id),
                                             "role": next_agent,
+                                            "time": str( math.trunc((time_table[str(next_agent)]) * 1000/ 1000)),
                                             "modified_query": "",
                                             "modified_query_label": ""
 
@@ -692,11 +684,13 @@ async def run_chatbots( session_id: str):
                         )
                         if word_state and len(str_response) > 0 and prev_char_backlog == char_backlog:
                             role = event['metadata']['langgraph_node']
+                            end_time = time.time()
                             message = {"event": "on_chat_model_stream", 
-                                        "message": word_buffer, 
+                                        "message": word_buffer,
                                         "table_name": await manager.get_chatbot_table_name(session_id),
                                         "pdf_name": await manager.get_chatbot_pdf_name(session_id),
                                         "role": role,
+                                        "time": str( math.trunc((end_time - time_table[str(role)]) * 1000/ 1000)),
                                         "modified_query": "",
                                         "modified_query_label": ""
                                         }
@@ -706,17 +700,18 @@ async def run_chatbots( session_id: str):
                     if event["event"] == "on_chain_end" and not is_interrupted:
                         if "output" in event['data']:
                             if 'modified_query' in event['data']['output']:
-                                rprint("Source: ", event['data']['output']['modified_query'])
+                                end_time = time.time()
                                 message = {"event": "on_chain_end", 
                                             "message": "", 
                                             "table_name": await manager.get_chatbot_table_name(session_id),
                                             "pdf_name": await manager.get_chatbot_pdf_name(session_id),
                                             "role": role,
+                                            "time": str(math.trunc((end_time - time_table[str(role)]) * 1000)/ 1000),
                                             "modified_query": str(event['data']['output']['modified_query']),
                                             "modified_query_label": str(event['data']['output']['modified_query_label'])
                                             }
-                                rprint("message: ", message)
                                 await safe_send(message, session_id)
+                                time_table[str(role)] = 0
 
                             if type(event['data']['output']) == dict and 'next_agent' in event['data']['output']:
                                 if event['data']['output']['next_agent'] == "__end__":
@@ -794,8 +789,16 @@ def handle_finish_reason(event, word_state, char_backlog):
 def process_stream_event(event, words_to_find, word_buffer, word_state, str_response, char_backlog):
     """Process a single streaming event and update the state."""
     word = event["data"]['chunk'].content
-    # rprint(word)
+
     word_buffer += word
+
+    word_buffer = word_buffer.replace("\\n\\n", "<br/><br/>").replace("\\n", "<br/>")
+
+    # rprint("Word (raw):", repr(word))
+    # rprint("Word Buffer (raw):", repr(word_buffer))
+    # rprint("Word: ", word)
+    # rprint("Word Buffer: ", word_buffer)
+
 
     find_word = find_word_in_text(word, words_to_find, word_buffer)
 

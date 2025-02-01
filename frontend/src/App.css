@@ -708,3 +708,7 @@ td,
   margin-left: auto;
   margin-right: auto;
 }
+
+.chat-time {
+  float: right;
+}

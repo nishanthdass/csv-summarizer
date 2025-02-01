@@ -7,6 +7,7 @@ interface MessageInstance {
   table_name: string;
   event: string;
   message: string;
+  time?: string;
   modified_query?: string | null;
   modified_query_label?: string | null;
 }
@@ -54,6 +55,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       table_name: String(data.table_name),
       event: String(data.event),
       message: String(data.message),
+      time: data.time ? String(data.time) : "0",
       modified_query: String(data.modified_query),
       modified_query_label: String(data.modified_query_label),
     };
@@ -83,6 +85,8 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         const message = formatIncomingMessage(parsedData);
 
         if (message.event === "on_chain_start") {
+          console.log("on_chain_start: ", message);
+          
           addNewMessage(message);
         }
 
@@ -91,6 +95,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         }
 
         if (message.event === "on_chain_end") {
+          console.log("on_chain_end: ", message);
           finishLastMessage(message);
         }
         
@@ -162,8 +167,15 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   };
 
   const addNewMessage = (message: MessageInstance) => {
-    setMessages((prevMessages) => [...prevMessages, message]);
-  }
+    const newMessage = {
+      ...message,
+      time: message.time || "0",  // Set default time if missing
+    };
+  
+    console.log("Adding new message:", newMessage);  // Debugging log
+    setMessages((prevMessages) => [...prevMessages, newMessage]);
+  };
+  
 
   const buildOnLastMessage = (deltaMessage: MessageInstance) => {
     setMessages((prevMessages) => {
@@ -176,6 +188,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       updatedMessages[updatedMessages.length - 1] = {
         ...lastMessage,
         message: deltaMessage.message,
+        time: deltaMessage.time
       };
   
       return updatedMessages;
@@ -195,6 +208,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       updatedMessages[updatedMessages.length - 1] = {
         ...lastMessage,
         message: lastMessage.message,
+        time: message.time,
         modified_query: message.modified_query,
         modified_query_label: message.modified_query_label
       };

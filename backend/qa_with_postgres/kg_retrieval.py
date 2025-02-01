@@ -11,8 +11,8 @@ openai_var  = LoadOpenAIConfig()
 neo4j_var = LoadNeo4jConfig()
 
 
-VECTOR_INDEX_NAME = "pdf_chunks"
-VECTOR_NODE_LABEL = 'Chunk'
+VECTOR_INDEX_NAME = "pdf_lines"
+VECTOR_NODE_LABEL = 'Line'
 VECTOR_SOURCE_PROPERTY = 'text'
 VECTOR_EMBEDDING_PROPERTY = 'textEmbedding'
 
@@ -22,19 +22,19 @@ def build_retrieval_query(pdf_file_name):
         WITH node, score AS closestScore
         ORDER BY closestScore DESC LIMIT 1
         WITH node, closestScore, node.lineNumber AS startingLine, node.source AS startingSource, node.text AS nodeText
-        MATCH (chunk:Chunk)
-        WHERE chunk.source = startingSource AND chunk.pdfFileName = "{pdf_file_name}"
-        ORDER BY chunk.lineNumber, chunk.chunkSeqId ASC
+        MATCH (line:Line)
+        WHERE line.source = startingSource AND line.pdfFileName = "{pdf_file_name}"
+        ORDER BY line.lineNumber, line.chunkSeqId ASC
         WITH node, closestScore, nodeText, startingLine, startingSource,
-            collect(chunk {{ lineNumber: chunk.lineNumber, chunkSeqId: chunk.chunkSeqId, text: chunk.text }}) AS additionalChunks,
-            collect(chunk.text) AS textOnly
+            collect(line {{ lineNumber: line.lineNumber, chunkSeqId: line.chunkSeqId, text: line.text }}) AS additionalLines,
+            collect(line.text) AS textOnly
         RETURN
             apoc.text.join(textOnly, " \n ") AS text,
             closestScore AS score,
             node {{
                 lineNumber: startingLine,
                 source: startingSource,
-                additionalChunks: additionalChunks
+                additionalLines: additionalLines
             }} AS metadata
     """
 
@@ -57,6 +57,8 @@ def kg_retrieval_window(pdf_name):
 
     retriever_window = vector_store_window.as_retriever(
     )
+
+    rprint("retriever_window: ", retriever_window)
 
     return retriever_window
 

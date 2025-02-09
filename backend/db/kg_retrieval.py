@@ -1,11 +1,8 @@
-import textwrap
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
 from rich import print as rprint
-from langchain.chains import RetrievalQAWithSourcesChain
-from langchain_openai import ChatOpenAI
-from qa_with_postgres.load_config import LoadOpenAIConfig, LoadNeo4jConfig
-from langchain_core.prompts import PromptTemplate
+from llm_core.config.load_llm_config import LoadOpenAIConfig
+from config import LoadNeo4jConfig
 
 openai_var  = LoadOpenAIConfig()
 neo4j_var = LoadNeo4jConfig()

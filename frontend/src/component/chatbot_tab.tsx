@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Fragment } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useDataContext } from '../context/useDataContext';
 import { useTasks } from '../context/useTaskContext';
 import { useChatWebSocket } from '../context/useChatWebsocket';
@@ -7,6 +7,8 @@ import { useTableSelection } from '../hooks/useTableSelection';
 
 
 const ChatbotTab = () => {
+
+
 const { handleSqlQuerySelections } = useTableSelection();
 const { currentTable } = useDataContext();
 
@@ -25,12 +27,13 @@ const isLoading = tasksForCurrentTable.some(
     (task) => task.status !== 'Completed' && task.status !== 'Failed'
   );
 
-
+const scrollToBottomRef = useRef<HTMLDivElement>(null);
 
 useEffect(() => {
-    // print last message
+
     if (messages.length > 0) {
         const message = messages[messages.length - 1]
+        scrollToBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
 }, [messages]);
 
@@ -49,7 +52,7 @@ const handleClickSql = async(message: string, table_name: string) => {
 const handleSend = () => {
     if (isConnected) {
         animate_dot();
-        sendMessage(currentTable?.name || '', input);
+        sendMessage(currentTable?.name || '', '',input);
         setInput('');
     }
 };
@@ -78,8 +81,8 @@ return (
         <div className="chat-messages">
             
             {messages.map((message, index) =>
-                
-                typeof message.modified_query === 'string' && message.modified_query.length > 0  ? (
+
+                typeof message.answer_query === 'string' && message.answer_query.length > 0  ? (
                     <span key={index} className={`message-line ${message.role}`} >
                     <strong>{message.role}:</strong>
                     
@@ -90,7 +93,7 @@ return (
                     )}
                     
                     <p>
-                    <button className="sql-query-button" onClick={() => message.modified_query && handleClickSql(message.modified_query, message.table_name)}>{message.modified_query_label}</button>
+                    <button className="sql-query-button" onClick={() => message.answer_query && handleClickSql(message.answer_query, message.table_name)}>{message.answer_query_label}</button>
                     </p>
                     <br/>
                     <br/>
@@ -107,6 +110,7 @@ return (
                 </span>
                 )
             )}
+            <div ref={scrollToBottomRef}></div>
         </div>
         </>
     )}

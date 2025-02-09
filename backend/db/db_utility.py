@@ -2,9 +2,9 @@ from fastapi import HTTPException, UploadFile
 import pandas as pd
 import re
 import os
-from qa_with_postgres.routes import LoadPostgresConfig
-from qa_with_postgres.pdf_processing_funct import process_pdf
-from  qa_with_postgres.kg_init import process_pdf_to_kg
+from config import LoadPostgresConfig
+from utils.pdf_processing_funct import process_pdf
+from  db.kg_utility import process_pdf_to_kg
 import shutil
 import pymupdf
 from rich import print as rprint
@@ -25,6 +25,27 @@ db = LoadPostgresConfig()
 
 #     except Exception as e:
 #         return {"detail": f"An error occurred while fetching summary data: {str(e)}"}
+
+def get_all_columns_and_types(table_name):
+
+    columns_and_types = []
+    conn = db.get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name}';")
+    columns_and_types = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    response = ""
+    for i in range(len(columns_and_types)):
+        column_name, postgres_type = columns_and_types[i]
+        response +=  str(column_name) + "(" + str(postgres_type) + ") + ,"
+
+    return response
+
+
 def run_query(table_name: str, query: str):
     conn = db.get_db_connection()
     cur = conn.cursor()

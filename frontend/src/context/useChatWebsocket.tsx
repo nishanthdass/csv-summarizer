@@ -5,24 +5,17 @@ import { useFetchDataDatabase } from "../hooks/fetch_hooks/useFetchDataDatabase"
 interface MessageInstance {
   role: string;
   table_name: string;
+  pdf_name: string;
   event: string;
   message: string;
   time?: string;
-  modified_query?: string | null;
-  modified_query_label?: string | null;
-}
-
-interface Message {
-  role: string;
-  sql_queries?: string
-  table_name: string;
-  run_id?: string;
-  full_message: string;
+  answer_query?: string | null;
+  viewing_query_label?: string | null;
 }
 
 interface ChatWebsocketContextValue {
   isConnected: boolean;
-  sendMessage: (table_name: string, input: string) => void;
+  sendMessage: (table_name: string, pdf_name: string, input: string) => void;
   input: MessageInstance[];
   messages: MessageInstance[];
   setMessages: React.Dispatch<React.SetStateAction<MessageInstance[]>>;
@@ -50,20 +43,30 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
 
 
   const formatIncomingMessage = (data: any): MessageInstance => {
-    return {
+    const message = {
       role: String(data.role),
       table_name: String(data.table_name),
+      pdf_name: String(data.pdf_name),
       event: String(data.event),
       message: String(data.message),
       time: data.time ? String(data.time) : "0",
-      modified_query: String(data.modified_query),
-      modified_query_label: String(data.modified_query_label),
+      answer_query: convertStringNullToNull(data.answer_query),
+      viewing_query_label: convertStringNullToNull(data.viewing_query_label),
     };
+  
+    console.log("Incoming message: ", message);
+    return message;
   };
+  
+  const convertStringNullToNull = (value: any): any => {
+    return value === "null" ? null : value;
+  };
+  
 
-  const formatOutgoingMessage = (role: string, table_name: string, message: string, event: string): MessageInstance => ({
+  const formatOutgoingMessage = (role: string, table_name: string, pdf_name: string, message: string, event: string): MessageInstance => ({
     role,
     table_name,
+    pdf_name,
     event,
     message,
   });
@@ -85,8 +88,6 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         const message = formatIncomingMessage(parsedData);
 
         if (message.event === "on_chain_start") {
-          console.log("on_chain_start: ", message);
-          
           addNewMessage(message);
         }
 
@@ -95,7 +96,6 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         }
 
         if (message.event === "on_chain_end") {
-          console.log("on_chain_end: ", message);
           finishLastMessage(message);
         }
         
@@ -154,8 +154,8 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   };
 
 
-  const sendMessage = (table_name: string, input: string) => {
-    const formattedUserMessage = formatOutgoingMessage("User", table_name, input, "request");
+  const sendMessage = (table_name: string, pdf_name: string, input: string) => {
+    const formattedUserMessage = formatOutgoingMessage("User", table_name, pdf_name, input, "request");
     
     addNewMessage(formattedUserMessage);
 
@@ -196,7 +196,6 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   };
 
   const finishLastMessage = (message: MessageInstance) => {
-    console.log("Finish last message: ", message);
     setMessages((prevMessages) => {
       if (prevMessages.length === 0) {
         console.warn("No messages to update.");
@@ -207,10 +206,10 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
 
       updatedMessages[updatedMessages.length - 1] = {
         ...lastMessage,
-        message: lastMessage.message,
+        message: message.message,
         time: message.time,
-        modified_query: message.modified_query,
-        modified_query_label: message.modified_query_label
+        answer_query: message.answer_query,
+        viewing_query_label: message.viewing_query_label
       };
   
       return updatedMessages;

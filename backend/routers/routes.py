@@ -1,11 +1,13 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 import psycopg2
-from qa_with_postgres.load_config import LoadPostgresConfig
-from qa_with_postgres.models import TableNameRequest, PdfNameRequest
-from qa_with_postgres.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data, run_query
-from qa_with_postgres.tasks import get_task, delete_task_table
-from qa_with_postgres.langgraph_multiagent import message_queue, start_chatbot, alter_table_name, alter_pdf_name, run_chatbots, active_websockets, tasks, call_sql_agent
+from config import LoadPostgresConfig
+from models.models import TableNameRequest, PdfNameRequest, MessageInstance
+from db.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data, run_query
+from services.tasks import get_task, delete_task_table
+from llm_core.langgraph_multiagent import run_chatbots, active_websockets, tasks, manager
+from llm_core.src.utils.chatbot_manager import start_chatbot, alter_table_name, alter_pdf_name
+from llm_core.src.llm.input_layer import message_queue
 from rich import print as rprint
 import os
 import re
@@ -130,14 +132,15 @@ async def get_table(table: TableNameRequest, request: Request):
     
     if not table_name:
         try:
-            await alter_table_name(session['name'], None)
+            await alter_table_name(session['name'], None, manager)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to get table name")
     else:
         try:
+
             table_data = get_table_data(table_name, page, page_size)
-            await alter_table_name(session['name'], table_name)
+            await alter_table_name(session['name'], table_name, manager)
             
             return table_data
         except psycopg2.DatabaseError as e:
@@ -253,7 +256,8 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             print("Waiting for message in websocket: ", active_websockets[session['name']])
             data = await websocket.receive_json()
-            await message_queue.put(data["message"])
+            message = MessageInstance(**data)
+            await message_queue.put(message)
     except WebSocketDisconnect:
         print(f"WebSocket disconnected for session: {session}")
     except Exception as e:
@@ -277,7 +281,7 @@ async def chat_server(request: Request):
         
         if not tasks.get(session['name']):
             print("No chat-server task exists for session: ", session)
-            await start_chatbot(session['name'])
+            await start_chatbot(session['name'], manager)
             task = asyncio.create_task(run_chatbots(session['name']))
             tasks[session['name']] = task
             # print(f"Started chatbot for session_id: {session}: ", tasks)

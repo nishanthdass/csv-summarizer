@@ -596,7 +596,9 @@ td,
   display: flex;
   flex-direction: column;
   flex-grow: 1;
-  overflow: hidden;
+  overflow: auto;
+  /* overflow-y: hidden;
+  overflow-x: hidden; */
   min-height: 0;
   background-color: #e4e4e4;
   height: 98%;
@@ -604,7 +606,7 @@ td,
 
 .conversation-window {
   flex-grow: 1;
-  overflow-y: auto;
+  overflow-y: hidden;
   padding: 5px;
   margin-top: 10px;
   min-height: 0;
@@ -682,6 +684,27 @@ td,
 .message-line.sql_validator {
   background-color: #715cfd;
   color: white;
+  padding: 5px;
+  border-radius: 5px;
+}
+
+.message-line.pdf_agent {
+  background-color: #df72cf;
+  color: rgb(0, 0, 0);
+  padding: 5px;
+  border-radius: 5px;
+}
+
+.message-line.pdf_validator {
+  background-color: #df72cf;
+  color: rgb(0, 0, 0);
+  padding: 5px;
+  border-radius: 5px;
+}
+
+.message-line.data_analyst {
+  background-color: #6cc7f8;
+  color: rgb(0, 0, 0);
   padding: 5px;
   border-radius: 5px;
 }

@@ -1,7 +1,8 @@
 from dotenv import load_dotenv
-from qa_with_postgres.pdf_processing_funct import param_insert
+from utils.pdf_processing_funct import param_insert
 from rich import print as rprint
-from qa_with_postgres.load_config import LoadOpenAIConfig, LoadNeo4jConfig
+from llm_core.config.load_llm_config import LoadOpenAIConfig
+from config import LoadNeo4jConfig
 
 
 load_dotenv()

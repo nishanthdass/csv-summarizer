@@ -1,11 +1,8 @@
-import re
 import os
 from rich import print as rprint
 import pymupdf4llm
 from langchain_core.documents import Document
-from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter, CharacterTextSplitter
-import json
-
+from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 
 # Intialize variables for character text splitters

@@ -57,13 +57,3 @@ class LoadNeo4jConfig:
         return Neo4jGraph(
             url=self.neo4j_uri, username=self.neo4j_user, password=self.neo4j_password, database=self.neo4j_db
         )
-
-
-class LoadOpenAIConfig:
-    def __init__(self):
-        # Load environment variables
-        load_dotenv()
-        self.openai_api_key = os.getenv('OPENAI_API_KEY')
-        self.openai_endpoint = os.getenv('OPENAI_BASE_URL')
-        self.openai_model = os.getenv('OPENAI_MODEL_NAME')
-        self.openai_embedding_model = os.getenv('OPENAI_EMB_MODEL')

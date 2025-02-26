@@ -18,22 +18,24 @@ def build_retrieval_query(pdf_file_name):
     return f"""
         WITH node, score AS closestScore
         ORDER BY closestScore DESC LIMIT 1
-        WITH node, closestScore, node.lineNumber AS startingLine, node.source AS startingSource, node.text AS nodeText
+        WITH node, closestScore, node.lineNumber AS startingLine, node.source AS startingSource, node.text AS nodeText, node.pageNumber AS nodePage
         MATCH (line:Line)
-        WHERE line.source = startingSource AND line.pdfFileName = "{pdf_file_name}"
+        WHERE line.source = startingSource AND line.pdfFileName = "{pdf_file_name}" AND line.pageNumber = nodePage
         ORDER BY line.lineNumber, line.chunkSeqId ASC
-        WITH node, closestScore, nodeText, startingLine, startingSource,
-            collect(line {{ lineNumber: line.lineNumber, chunkSeqId: line.chunkSeqId, text: line.text }}) AS additionalLines,
+        WITH node, closestScore, nodeText, startingLine, startingSource, nodePage,
+            collect(line {{ lineNumber: line.lineNumber, chunkSeqId: line.chunkSeqId, text: line.text, pageNumber: line.pageNumber }}) AS additionalLines,
             collect(line.text) AS textOnly
         RETURN
             apoc.text.join(textOnly, " \n ") AS text,
             closestScore AS score,
             node {{
                 lineNumber: startingLine,
+                pageNumber: nodePage,
                 source: startingSource,
                 additionalLines: additionalLines
             }} AS metadata
     """
+
 
 
 def kg_retrieval_window(pdf_name):
@@ -54,8 +56,6 @@ def kg_retrieval_window(pdf_name):
 
     retriever_window = vector_store_window.as_retriever(
     )
-
-    rprint("retriever_window: ", retriever_window)
 
     return retriever_window
 

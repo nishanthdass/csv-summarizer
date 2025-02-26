@@ -10,7 +10,9 @@ html, body {
 .App {
   display: flex;
   font-family: Arial, sans-serif;
-  padding: 20px;
+  padding: .5px;
+
+  padding-bottom: 0px;
   max-width: 100%;
   margin: 0 auto;
   border: 1px solid #000000;
@@ -18,7 +20,6 @@ html, body {
   height: 100vh;
   box-sizing: border-box;
   background-color: rgba(236, 236, 236, 0.804);
-
 }
 
 .sidebar {
@@ -30,6 +31,7 @@ html, body {
   height: 100%; 
   padding-right: 10px;
   transition: transform 0.3s ease-in-out;
+  background-color: rgba(236, 236, 236, 0.804);
 }
 
 .sidebar-closed {
@@ -79,6 +81,7 @@ html, body {
   padding-top: 0%;
   padding-bottom: 0%;
   border-top-right-radius: 15px; 
+  background-color: rgba(236, 236, 236, 0.804);
 }
 
 
@@ -660,6 +663,8 @@ td,
   margin-top: 5px;
   margin-bottom: 5px;
   padding: 2px;
+  width: fit-content;
+
 }
 
 .message-line.User {
@@ -732,6 +737,23 @@ td,
   margin-right: auto;
 }
 
-.chat-time {
+.chat-info {
   float: right;
+  font-style: italic;
+}
+/* .chat-time {
+
+}
+
+.chat-thread-id {
+
+} */
+
+.token-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  padding: 0%;
+  word-wrap: break-word;
+  overflow-x: auto;
 }

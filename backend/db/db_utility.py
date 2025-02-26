@@ -4,7 +4,7 @@ import re
 import os
 from config import LoadPostgresConfig
 from utils.pdf_processing_funct import process_pdf
-from  db.kg_utility import process_pdf_to_kg
+from  db.kg_utility import process_pdf_to_kg, process_csv_columns_to_kg
 import shutil
 import pymupdf
 from rich import print as rprint
@@ -41,7 +41,7 @@ def get_all_columns_and_types(table_name):
     response = ""
     for i in range(len(columns_and_types)):
         column_name, postgres_type = columns_and_types[i]
-        response +=  str(column_name) + "(" + str(postgres_type) + ") + ,"
+        response +=  str(column_name) + "(" + str(postgres_type) + "),"
 
     return response
 
@@ -68,7 +68,7 @@ def run_query(table_name: str, query: str):
     filtered_llm_query_result = []
 
     for row in llm_query_result:
-        row = {key: value for key, value in row.items() if key == 'ctid' or (key in column_names)}
+        # row = {key: value for key, value in row.items() if key == 'ctid' or (key in column_names)}
         filtered_llm_query_result.append(row)
 
 
@@ -154,6 +154,7 @@ def ingest_csv_into_postgres(file: UploadFile):
     file_load = file.file
     table_name = re.sub(r'\.csv$', '', file_name)
     table_name = table_name.replace('-', '_')
+    table_name = table_name.replace(' ', '_')
 
     csv_upload_dir = f"./uploaded_files/csv_files/{table_name}"
     os.makedirs(csv_upload_dir, exist_ok=True)
@@ -173,6 +174,7 @@ def ingest_csv_into_postgres(file: UploadFile):
     }
 
     column_definitions = []
+    clean_col_array = []
 
     df = pd.read_csv(file_location)
     columns = df.columns
@@ -182,6 +184,7 @@ def ingest_csv_into_postgres(file: UploadFile):
         postgres_type = dtype_mapping.get(str(dtype), 'TEXT')
         clean_col = sanitize_column_name(col)
         column_definitions.append(f"{clean_col} {postgres_type}")
+        clean_col_array.append([clean_col, postgres_type])
 
     create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
     create_table_query += ", ".join(column_definitions) + ");"
@@ -210,6 +213,11 @@ def ingest_csv_into_postgres(file: UploadFile):
         conn.rollback()
     finally:
         db.close_db_connection(conn)
+
+    try:
+        process_csv_columns_to_kg(clean_col_array, table_name)
+    except Exception as e:
+        print(f"Error ingesting data into table {table_name}: {str(e)}")
 
     cur.close()
     conn.close()

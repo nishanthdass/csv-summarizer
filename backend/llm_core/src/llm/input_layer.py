@@ -19,7 +19,11 @@ state = {
                 "answer_query": None,
                 "viewing_query_label": None,
                 "has_function_call": None,
-                "function_call": None
+                "function_call": None,
+                "is_multiagent": None,
+                "agent_step": 0,
+                "runtime_queries": "",
+                "query_failed": None
             }
 
 
@@ -37,7 +41,11 @@ async def start_chat_state(manager, session_id, message: MessageInstance):
         "answer_query": None,
         "viewing_query_label": None,
         "has_function_call": None,
-        "function_call": None
+        "function_call": None,
+        "is_multiagent": None,
+        "agent_step": 0,
+        "runtime_queries": "",
+        "query_failed": None
     }
 
     return state

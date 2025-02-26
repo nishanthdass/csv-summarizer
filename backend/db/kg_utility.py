@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from utils.pdf_processing_funct import param_insert
+from utils.table_processing_funct import param_insert_csv
 from rich import print as rprint
 from llm_core.config.load_llm_config import LoadOpenAIConfig
 from config import LoadNeo4jConfig
@@ -168,24 +169,6 @@ def refresh_schema():
     print(kg.schema)
 
 
-# def create_constraints():
-#     kg.query("""
-#         CREATE CONSTRAINT unique_chunk IF NOT EXISTS 
-#             FOR (c:Chunk) REQUIRE c.chunkId IS UNIQUE
-#         """)
-    
-
-
-# def add_chunk_as_node(pdf_obj):
-#     node_count = 0
-#     for chunk in pdf_obj:
-#         params = param_insert(chunk)
-#         kg.query(merge_chunk_node_query, 
-#                 params=params)
-#         node_count += 1
-#     print(f"Created {node_count} nodes")
-
-
 def view_nodes_constraints_indexes():
     show_nodes = kg.query("""MATCH (n) RETURN n""")
 
@@ -209,48 +192,6 @@ def remove_nodes():
     rprint(delete_nodes)
 
 
-# def create_vector_index():
-#     rprint("Creating vector index: ", VECTOR_INDEX_NAME)
-#     try:
-#         result = kg.query("""
-#             CREATE VECTOR INDEX $VECTOR_INDEX_NAME IF NOT EXISTS
-#             FOR (c:Chunk) ON (c.textEmbedding) 
-#             OPTIONS { 
-#                 indexConfig: {
-#                     `vector.dimensions`: 3072,
-#                     `vector.similarity_function`: 'cosine'    
-#                 }
-#             }
-#         """, params={"VECTOR_INDEX_NAME": VECTOR_INDEX_NAME})
-#         rprint(f"Query successful: {result}")
-#     except Exception as e:
-#         rprint(f"Query failed: {str(e)}")
-
-
-
-# def create_embeddings():
-#     rprint("Creating embeddings with specified model")
-#     kg.query("""
-#     MATCH (chunk:Chunk) WHERE chunk.textEmbedding IS NULL
-#     WITH chunk, genai.vector.encode(
-#       chunk.text, 
-#       "OpenAI", 
-#       {
-#         token: $openAiApiKey, 
-#         endpoint: $openAiEndpoint,
-#         model: $model,
-#         dimensions: 3072
-#       }) AS vector
-#     CALL db.create.setNodeVectorProperty(chunk, "textEmbedding", vector)
-#     """, 
-#     params={
-#         "openAiApiKey": openai_var.openai_api_key,
-#         "openAiEndpoint": openai_var.openai_endpoint,
-#         "model" : openai_var.openai_embedding_model,
-#     })
-#     kg.refresh_schema()
-#     print(kg.schema)
-
 
 #---------------------------------------------------------------------------------------
 
@@ -270,6 +211,15 @@ MERGE (mergedLine:Line {lineId: $chunkParam.lineId})
         mergedLine.chunkSeqId = $chunkParam.chunkSeqId,
         mergedLine.text = $chunkParam.text
 RETURN mergedLine
+"""
+
+merge_column_node_query = """
+MERGE (mergedColumn:Column {columnId: $chunkParam.columnId})
+    ON CREATE SET
+        mergedColumn.tableName = $chunkParam.tableName,
+        mergedColumn.columnName = $chunkParam.columnName,
+        mergedColumn.columnType = $chunkParam.columnType
+RETURN mergedColumn
 """
 
 
@@ -469,6 +419,116 @@ def process_pdf_to_kg(pdf_obj, file_name_minus_extension):
     except Exception as e:
         rprint(f"Query failed: {str(e)}")
 
+def create_column_constraints():
+    """Create constraints for column nodes"""
+    kg.query("""
+        CREATE CONSTRAINT unique_column IF NOT EXISTS 
+            FOR (c:Column) REQUIRE c.columnId IS UNIQUE
+        """)
+    
+def add_column_as_node(column_array, table_name):
+    """Add columns as node with metadata"""
+    node_count = 0
+    for col in column_array:
+        params = param_insert_csv(table_name, col[0], col[1])
+        kg.query(merge_column_node_query, 
+                params=params)
+        node_count += 1
+    print(f"Created {node_count} nodes")
 
-# file_name = "Mathematics-Methods-for-Early-Childhood-1620843562_Delete"
-# connect_line_to_page(file_name)
+def create_column_vector_index():
+    """Create vector index for column nodes"""
+    try:
+        result = kg.query("""
+            CREATE VECTOR INDEX $VECTOR_INDEX_NAME IF NOT EXISTS
+            FOR (c:Column) ON (c.columnEmbedding) 
+            OPTIONS { 
+                indexConfig: {
+                    `vector.dimensions`: 3072,
+                    `vector.similarity_function`: 'cosine'    
+                }
+            }
+        """, params={"VECTOR_INDEX_NAME": VECTOR_INDEX_NAME})
+        rprint(f"Query successful: {result}")
+    except Exception as e:
+        rprint(f"Query failed: {str(e)}")
+
+
+def create_column_embeddings():
+    """Create embeddings for column nodes"""
+    kg.query("""
+    MATCH (column:Column) WHERE column.columnEmbedding IS NULL
+    WITH column, genai.vector.encode(
+      column.columnName, 
+      "OpenAI", 
+      {
+        token: $openAiApiKey, 
+        endpoint: $openAiEndpoint,
+        model: $model,
+        dimensions: 3072
+      }) AS vector
+    CALL db.create.setNodeVectorProperty(column, "columnEmbedding", vector)
+    """, 
+    params={
+        "openAiApiKey": openai_var.openai_api_key,
+        "openAiEndpoint": openai_var.openai_endpoint,
+        "model" : openai_var.openai_embedding_model,
+    })
+    kg.refresh_schema()
+
+
+def return_any_column(file_name_minus_extension):
+    """Return any column for a given table"""
+    cypher = """
+    MATCH (anyColumn:Column)
+    WHERE anyColumn.tableName = $tableInfoParam
+    WITH anyColumn LIMIT 1
+    RETURN anyColumn { .columnId, .tableName, .columnName, .columnType} as tableInfo
+    """
+    any_chunk = kg.query(cypher, params={'tableInfoParam': file_name_minus_extension})
+    return any_chunk
+
+
+
+def create_tablename_from_column_nodes(file_name_minus_extension):
+    """Create Table entity from column nodes"""
+    kg.query(
+        """
+        MATCH (c:Column)
+        WHERE c.tableName = $tableName
+        WITH DISTINCT c.tableName AS tableName
+        MERGE (t:Tablename { tableName: tableName })
+        RETURN t
+        """, 
+        params={'tableName': file_name_minus_extension}
+    )
+
+
+def connect_column_to_table(file_name_minus_extension):
+    cypher = """
+                MATCH (c:Column), (t:Tablename)
+                    WHERE c.tableName = t.tableName AND c.tableName = $columnInfoParam
+                MERGE (c)-[newRelationship:COLUMN_OF]->(t)
+                RETURN count(newRelationship)
+            """
+
+    result = kg.query(cypher, params={'columnInfoParam': file_name_minus_extension})
+    rprint(result)
+
+
+
+
+def process_csv_columns_to_kg(column_array, file_name_minus_extension):
+    rprint("Begin processing")
+    rprint(f"Processing {file_name_minus_extension}")
+    create_column_constraints()
+    rprint("Adding column nodes...")
+    add_column_as_node(column_array, file_name_minus_extension)
+    rprint("Creating column vector index...")
+    create_column_vector_index()
+    rprint("Creating column embeddings...")
+    create_column_embeddings()
+    rprint("Creating tablename node...")
+    create_tablename_from_column_nodes(file_name_minus_extension)
+    rprint("Connecting column nodes to table nodes...")
+    connect_column_to_table(file_name_minus_extension)

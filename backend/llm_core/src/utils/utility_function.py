@@ -1,7 +1,7 @@
 import logging
 from rich import print as rprint
 from models.models import MessageInstance
-
+import openai
 
 def find_word_in_text( word, words_to_find, word_buffer):
     # print( "input word: ", word )
@@ -96,11 +96,13 @@ def process_stream_event_type(event):
                 if isinstance(input_data, dict) and "next_agent" in input_data:
                     next_agent = input_data["next_agent"]
                     return "on_chain_start", next_agent
-                
-    
-
     return None, None
 
-
+def get_embedding(text):
+    response = openai.embeddings.create(
+        model="text-embedding-3-large",
+        input=text
+    )
+    return response.data[0].embedding 
 
     

@@ -6,7 +6,7 @@ TABLEONLYPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
         "You are the supervisor of a conversation about a table that goes by {table_name}. Never make assumptions about the content of the table based on the name of the table as a bananas column can exist in the table. Ensure that all decisions are based on facts from queries or from the other agents."
         "Your tasks are:\n\n"
         "1. If a few database queries are needed to answer the user's question, then route the question to `sql_agent`. DO not make assumptions.\n\n"
-        "2. If the question requires predictive analysis route it to `data_analyst`.\n\n"
+        "2. If the qustion from the user is about manipulating the data in the table, then route the question to `sql_manipulator_agent`.\n\n"
         "3. If no database query or deeper analysis is needed, set the next_agent to '__end__' and answer the question.\n\n"
         "4. If nessecary, look through {conversation_history} to look at previous messages for context.\n\n"
         "5. If the question has nothing to do with the {table_name} or if {table_name} is None table, set the next_agent to '__end__' and explain why. Never assueme anything about the table"
@@ -86,36 +86,38 @@ DATAANALYSTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
 (
         "system",
         "You are an helpful guide for a table named {table_name} and a PDF document named {pdf_name}.\n"
-        "Your goal is to answer the user's question by using the information from the table and the pdf. If the qustion is not specific to the contents of the table, then find a way to use the data from the table in your answer. Your goal can be accomplished by following 3 steps in order.\n"
-        "Important: Do not skip any of the 3 steps. Do not repeat a step unless more information is needed from an agent. It is essential that every step is completed. Use agent_step {agent_step} to track previously completed steps.\n\n"
+        "Your goal is to answer the user's question by using the information from the table and the pdf. If the qustion is not specific to the contents of the table, then find a way to use the data from the table in your answer.\n"
+        "Important: Use agent_step {agent_step} to track the correct step. Always verify the current state of agent_step. Always pay attention to the agent_step in the conversation as it will guide you to the correct step.\n\n"
         "The columns names for the table are {columns_and_types}.\n\n"
         "The agent_scratchpads can be used by agents to store information from the previous step. Here is the agent_scratchpads: {agent_scratchpads}.\n\n"
-
+        "The conversation so far:\n{user_message}\n\n"
+        
         "**Steps:**\n"
-        "If {agent_step} is 1, Identify what information is needed to answer the question (e.g., Who, Where, When). Expand or refine the question accordingly, and place your augmented question in the 'question' field.\n"
+        "If agent_step is 1, Identify what information is needed to answer the question (e.g., Who, Where, When). Expand or refine the question accordingly, and place your augmented question in the 'question' field.\n"
         "   - For instance, if the user asks: \"What’s a good hotel near JFK airport?\"\n"
         "     - Augment the question set to include: \"What is the address of JFK airport?\"\n"
         "       \"Which hotels are located near the address of JFK airport?\"\n"
         "       \"Are there hotels in the area of JFK airport?\"\n"
         "   - Once you have your augmented or refined set of questions, set `next_agent` to `pdf_agent`.\n\n"
 
-        "If {agent_step} is 2, Identify what information from the columns of the table can aid in answering the question or strengthening the already existing answer from the previous step.\n"
+        "If agent_step is 2, Identify what information from the columns of the table can aid in answering the question or strengthening the already existing answer from the previous step.\n"
         "   - Augment the question with this information. Get creative if you see that the question is not specific to the contents of the table.\n"
         "   - Place the updated question, along with any relevant information from agent_scratchpads, in the 'question' field. Set `next_agent` to `sql_agent`.\n\n"
 
-        " If {agent_step} is 3, then use the information in the agent_scratchpads to build a final answer. Place your answer in the 'answer' field and set `next_agent` to `__end__`.\n\n"
+        "If agent_step is 3, then an error was raised. Please let the user know the query that caused the error, augment the question to widen the scope of the query, and place your augmented question in the 'question' field. Set `next_agent` to `sql_agent` . You can see the error message in the agent_scratchpads field.\n\n"
+        
+        "If agent_step is 4 , place your answer in the 'answer' field and set `next_agent` to `__end__`. You can see the answer in the agent_scratchpads field.\n\n"
 
         "Always respond in json format:\n"
-            "{{\"current_agent\": \"data_analyst\",\"next_agent\": \"agent name which is either pdf_agent, sql_agent or __end__\", \"question\": \"augmented question for agents and sql queries(if applicable)\", \"answer\": \" <_START_> Description of current step or final answer <_END_> \", \"is_multiagent\": \"True if routing to another agent, and false if routing to __end__\", \"step\": \"{agent_step}\"}}\n\n"
-            "The conversation so far:\n{user_message}\n\n")
+            "{{\"current_agent\": \"data_analyst\",\"next_agent\": \"agent name which is either pdf_agent, sql_agent or __end__\", \"question\": \"augmented question for agents and sql queries(if applicable)\", \"answer\": \" <_START_> agent_step and the Description of current step or final answer <_END_> \", \"is_multiagent\": \"True if routing to another agent, and false if routing to __end__\", \"step\": \"{agent_step}\"}}\n\n")
         ])
 
 SQLAGENTMULTIAGENTPROMPTTEMPLATE = f"""
             Your task is to write two new queries. One query will help answer the user's question and the other will help visualize the result. 
-            Important: Do not under any circumstances place a query that does not yield a result in the 'answer_query' field.
+            Important: Do not under any circumstances place a query that does not yield a result in the 'answer_query' field. You should run the answer query to check if it returns a value.
             
             1   The **answer query** should answer the user's question. 
-                A.  Test the query to ensure it returns a value as a result, otherwise modify the query and try again..
+                A.  Test the query to ensure it returns a value that are not empty, otherwise modify the answer query and try again until it yields a non-empty result.
 
                 B.  Base all query arguments on the information in the user’s question.
                     -   Avoid generating your own data for the WHERE clause, but it is fine to manipulate the range slightly to widen the results.

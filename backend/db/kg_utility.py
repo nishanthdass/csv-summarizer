@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from utils.pdf_processing_funct import param_insert
-from utils.table_processing_funct import param_insert_csv
+from utils.table_processing_funct import param_insert_csv, param_insert_csv_row_values
 from rich import print as rprint
 from llm_core.config.load_llm_config import LoadOpenAIConfig
 from config import LoadNeo4jConfig
@@ -222,6 +222,16 @@ MERGE (mergedColumn:Column {columnId: $chunkParam.columnId})
 RETURN mergedColumn
 """
 
+merge_row_value_node_query = """
+MERGE (mergedRowValue:RowValue {rowValueId: $chunkParam.rowValueId})
+    ON CREATE SET
+        mergedRowValue.tableName = $chunkParam.tableName,
+        mergedRowValue.columnName = $chunkParam.columnName,
+        mergedRowValue.value = $chunkParam.value,
+        mergedRowValue.rowIndex = $chunkParam.rowIndex
+RETURN mergedRowValue
+"""
+
 
 def create_line_constraints():
     """Create constraints for line nodes"""
@@ -436,12 +446,41 @@ def add_column_as_node(column_array, table_name):
         node_count += 1
     print(f"Created {node_count} nodes")
 
+def add_row_value_nodes(random_rows, table_name):
+    """Add row value nodes with metadata"""
+    node_count = 0
+    for key, value_list in random_rows.items():  # `value_list` is the list of values
+        rprint(key, value_list)
+        for index, val in enumerate(value_list):  # Get both index and value
+            params = param_insert_csv_row_values(table_name, key, val, index)  # Pass index
+            kg.query(merge_row_value_node_query, params=params)
+            node_count += 1
+    print(f"Created {node_count} nodes")
+
+
 def create_column_vector_index():
     """Create vector index for column nodes"""
     try:
         result = kg.query("""
             CREATE VECTOR INDEX $VECTOR_INDEX_NAME IF NOT EXISTS
             FOR (c:Column) ON (c.columnEmbedding) 
+            OPTIONS { 
+                indexConfig: {
+                    `vector.dimensions`: 3072,
+                    `vector.similarity_function`: 'cosine'    
+                }
+            }
+        """, params={"VECTOR_INDEX_NAME": VECTOR_INDEX_NAME})
+        rprint(f"Query successful: {result}")
+    except Exception as e:
+        rprint(f"Query failed: {str(e)}")
+
+def create_row_value_vector_index():
+    """Create vector index for row value nodes"""
+    try:
+        result = kg.query("""
+            CREATE VECTOR INDEX $VECTOR_INDEX_NAME IF NOT EXISTS
+            FOR (r:RowValue) ON (r.rowValueEmbedding) 
             OPTIONS { 
                 indexConfig: {
                     `vector.dimensions`: 3072,
@@ -477,6 +516,32 @@ def create_column_embeddings():
     kg.refresh_schema()
 
 
+def create_row_value_embeddings():
+    """Create embeddings for row value nodes"""
+    kg.query("""
+        MATCH (rowValue:RowValue) 
+        WHERE rowValue.rowValueEmbedding IS NULL
+        WITH rowValue, 
+            toString(rowValue.value) AS stringValue
+        WITH rowValue, genai.vector.encode(
+            stringValue, 
+            "OpenAI", 
+            {
+                token: $openAiApiKey, 
+                endpoint: $openAiEndpoint,
+                model: $model,
+                dimensions: 3072
+            }) AS vector
+        CALL db.create.setNodeVectorProperty(rowValue, "rowValueEmbedding", vector)
+    """, 
+    params={
+        "openAiApiKey": openai_var.openai_api_key,
+        "openAiEndpoint": openai_var.openai_endpoint,
+        "model" : openai_var.openai_embedding_model,
+    })
+    kg.refresh_schema()
+
+
 def return_any_column(file_name_minus_extension):
     """Return any column for a given table"""
     cypher = """
@@ -487,6 +552,7 @@ def return_any_column(file_name_minus_extension):
     """
     any_chunk = kg.query(cypher, params={'tableInfoParam': file_name_minus_extension})
     return any_chunk
+
 
 
 
@@ -515,10 +581,22 @@ def connect_column_to_table(file_name_minus_extension):
     result = kg.query(cypher, params={'columnInfoParam': file_name_minus_extension})
     rprint(result)
 
+def connect_row_value_to_column(file_name_minus_extension):
+    cypher = """
+                MATCH (r:RowValue), (c:Column)
+                    WHERE r.columnName = c.columnName AND c.tableName = $columnInfoParam AND c.tableName = r.tableName
+                MERGE (r)-[newRelationship:VALUE_OF]->(c)
+                RETURN count(newRelationship)
+            """
+
+    result = kg.query(cypher, params={'columnInfoParam': file_name_minus_extension})
 
 
 
-def process_csv_columns_to_kg(column_array, file_name_minus_extension):
+def process_csv_columns_to_kg(column_array, random_rows, file_name_minus_extension):
+    # rprint("column_array", column_array)
+    # rprint("random_rows", random_rows)
+    # rprint("file_name_minus_extension", file_name_minus_extension)
     rprint("Begin processing")
     rprint(f"Processing {file_name_minus_extension}")
     create_column_constraints()
@@ -532,3 +610,11 @@ def process_csv_columns_to_kg(column_array, file_name_minus_extension):
     create_tablename_from_column_nodes(file_name_minus_extension)
     rprint("Connecting column nodes to table nodes...")
     connect_column_to_table(file_name_minus_extension)
+    rprint("Create Row Value nodes...")
+    add_row_value_nodes(random_rows, file_name_minus_extension)
+    rprint("Creating row value vector index...")
+    create_row_value_vector_index()
+    rprint("Creating row value embeddings...")
+    create_row_value_embeddings()
+    rprint("Connecting row value nodes to column nodes...")
+    connect_row_value_to_column(file_name_minus_extension)

@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage
 from llm_core.src.utils.utility_function import *
 
 message_queue = asyncio.Queue()
+hold_messages = {}
 
 
 state = {

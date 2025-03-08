@@ -4,12 +4,15 @@ import { useTasks } from '../context/useTaskContext';
 import { useChatWebSocket } from '../context/useChatWebsocket';
 import { useFetchDataDatabase } from '../hooks/fetch_hooks/useFetchDataDatabase';
 import { useTableSelection } from '../hooks/useTableSelection';
+import { useFileSidePanelOperations } from '../hooks/useFileSidePanelOperations';
+
 
 
 const ChatbotTab = () => {
 
 
 const { handleSqlQuerySelections } = useTableSelection();
+const { loadTableFromDatabase} = useFileSidePanelOperations();
 const { currentTable } = useDataContext();
 
 const { fetchRunSQLQuery } = useFetchDataDatabase();
@@ -38,10 +41,11 @@ useEffect(() => {
     }
 }, [messages]);
 
-const handleClickSql = async(message: string, table_name: string) => {
+const handleClickSql = async(message: string, table_name: string, role: string) => {
     if (isConnected) {
         try {
-            const response = await fetchRunSQLQuery(message, table_name);
+            const response = await fetchRunSQLQuery(message, table_name, role);
+            loadTableFromDatabase(table_name);
             handleSqlQuerySelections?.(response.data);
         } catch (error) {
             console.error(error);
@@ -94,7 +98,7 @@ return (
                     )}
                     
                     <p>
-                    <button className="sql-query-button" onClick={() => message.visualizing_query && handleClickSql(message.visualizing_query, message.table_name)}>{message.viewing_query_label}</button>
+                    <button className="sql-query-button" onClick={() => message.visualizing_query && handleClickSql(message.visualizing_query, message.table_name, message.role)}>{message.viewing_query_label}</button>
                     </p>
                     
                     {message.role !== "User" && message.token_object && message.token_object.length > 0 && (

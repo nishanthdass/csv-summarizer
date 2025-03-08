@@ -693,6 +693,13 @@ td,
   border-radius: 5px;
 }
 
+.message-line.sql_manipulator_agent {
+  background-color: #715cfd;
+  color: white;
+  padding: 5px;
+  border-radius: 5px;
+}
+
 .message-line.pdf_agent {
   background-color: #df72cf;
   color: rgb(0, 0, 0);

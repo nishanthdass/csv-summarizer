@@ -23,7 +23,7 @@ async def call_sql_agent(model, state: MessageState) -> MessageState:
     sql_agent_for_table = create_sql_agent( llm=model, 
                                             toolkit=toolkit,
                                             agent_type="openai-tools",
-                                            verbose=False,
+                                            verbose=True,
                                             agent_executor_kwargs={"return_intermediate_steps": True})
 
     question = state["question"]
@@ -44,6 +44,41 @@ async def call_sql_agent(model, state: MessageState) -> MessageState:
         prompt = SQLAGENTMULTIAGENTPROMPTTEMPLATE + augmented_question
     else:
         prompt = SQLAGENTPROMPTTEMPLATE + augmented_question
+
+    sql_result = await sql_agent_for_table.ainvoke(prompt)
+
+    return sql_result
+
+async def call_sql_manipulator_agent(model, state: MessageState) -> MessageState:
+    model = ChatOpenAI(model=model, stream_usage=True,temperature=0.0)
+    db_for_table = SQLDatabase.from_uri(postgres_var.db_url, include_tables=[state["table_name"]])
+    toolkit = SQLDatabaseToolkit(db=db_for_table, llm=model)
+    sql_agent_for_table = create_sql_agent( llm=model, 
+                                            toolkit=toolkit,
+                                            agent_type="openai-tools",
+                                            verbose=False,
+                                            agent_executor_kwargs={"return_intermediate_steps": True})
+
+    question = state["question"]
+
+    prompt = f"""
+        You are a SQL specialist who can write SQL queries to make changes to the database.
+        You do not need to run the query to alter the database, but you can run queries to look at the database before writing the final query. You are given the user's question and the database schema.
+        Make sure to query the database to understand the relevent data before adding new data to the database. Try to make the query general enough to be able to answer any question about the table.
+
+        The user's question is: {question.content}
+
+
+        Return in JSON format: 
+        "{{\"current_agent\": \"sql_agent\", 
+            \"next_agent\": \"sql_agent\", 
+            \"question\": \"None\",
+            \"answer\": \"<_START_> Description of created query <_END_>\",
+            \"answer_query\": \"Query needed to alter the database\",
+            \"viewing_query_label\": \"Label that describes the query needed to alter the database\",
+            \"status\": \"success if query is successfully created, else fail\"}}\n\n"
+        """
+    
 
     sql_result = await sql_agent_for_table.ainvoke(prompt)
 
@@ -78,16 +113,31 @@ def kg_retrieval_chain(user_message, prompt, state):
         return_source_documents = True
     )
 
+    # kg_chain_column_window = RetrievalQAWithSourcesChain.from_chain_type(
+    #     ChatOpenAI( temperature=0,
+    #                 stream_usage=True,
+    #                 openai_api_key=openai_var.openai_api_key,
+    #                 openai_api_base=openai_var.openai_endpoint,
+    #                 model=openai_var.openai_model
+    #                 ), 
+    #     chain_type = "stuff", 
+    #     retriever = kg_column_retrieval_window(state["pdf_name"]),
+    #     chain_type_kwargs = chain_type_kwargs,
+    
+    #     return_source_documents = True
+    # )
+
     answer = kg_chain_window(
         {"question": user_message},
         return_only_outputs=True,
         )
-
+    
     return answer
 
 
 def trimmer(state):
     """Trim messages to a maximum of 6500 tokens."""
+    # rprint("Pre Trimmed Messages: ", state["messages"])
     model = ChatOpenAI(model="gpt-4o", temperature=0)
 
     trimmer = trim_messages(

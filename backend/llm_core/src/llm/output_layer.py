@@ -69,6 +69,22 @@ async def end_agent_stream(manager, session_id, message_str: str, role: str, tim
 
     return message
 
+async def query_agent_stream(manager, session_id, message_str: str, role: str, time: float, visualizing_query: str, viewing_query_label: str):
+    time_int = int(time * 1000)
+    float_time = float(time_int) / 1000
+    message = {
+            "event": "on_query_stream", 
+            "message": message_str,
+            "table_name": await manager.get_chatbot_table_name(session_id),
+            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+            "role": role,
+            "time": float_time,
+            "visualizing_query": visualizing_query,
+            "viewing_query_label": viewing_query_label
+            }
+
+    return message
+
 async def send_usage_message(manager, session_id, message_str: str, role: str, time: float):
     time_int = int(time * 1000)
     float_time = float(time_int) / 1000

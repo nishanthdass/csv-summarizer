@@ -4,7 +4,8 @@ import re
 import os
 from config import LoadPostgresConfig
 from utils.pdf_processing_funct import process_pdf
-from  db.kg_utility import process_pdf_to_kg, process_csv_columns_to_kg
+from  db.kg_utility import process_pdf_to_kg
+from llm_core.src.utils.utility_function import get_embedding
 import shutil
 import pymupdf
 from rich import print as rprint
@@ -46,7 +47,7 @@ def get_all_columns_and_types(table_name):
     return response
 
 
-def run_query(table_name: str, query: str):
+def run_query(table_name: str, query: str, role: str):
     conn = db.get_db_connection()
     cur = conn.cursor()
 
@@ -55,25 +56,25 @@ def run_query(table_name: str, query: str):
     if not table_exists:
         raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
     
-    # get all column names
-    cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}';")
-    column_names = [row[0] for row in cur.fetchall()]
-    
-    cur.execute(query)
-    columns = cur.description
-    values = cur.fetchall()
-
-    llm_query_result = [dict(zip([col[0] for col in columns if col], row)) for row in values]
-
     filtered_llm_query_result = []
+    # get all column names
+    if role == "sql_agent":
+        cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}';")
+        
+        cur.execute(query)
+        columns = cur.description
+        values = cur.fetchall()
 
-    for row in llm_query_result:
-        # row = {key: value for key, value in row.items() if key == 'ctid' or (key in column_names)}
-        filtered_llm_query_result.append(row)
+        llm_query_result = [dict(zip([col[0] for col in columns if col], row)) for row in values]
 
 
-    cur.close()
-    conn.close()
+        for row in llm_query_result:
+            filtered_llm_query_result.append(row)
+            
+    
+    if role == "sql_manipulator_agent":
+        cur.execute(query)
+        conn.commit()
 
     return filtered_llm_query_result
 
@@ -149,12 +150,12 @@ def ingest_csv_into_postgres(file: UploadFile):
     Ingests the CSV file into a PostgreSQL table.
     This assumes the table does not exist and needs to be created.
     """
+    rprint("Ingesting CSV file...")
 
     file_name = file.filename
     file_load = file.file
     table_name = re.sub(r'\.csv$', '', file_name)
     table_name = table_name.replace('-', '_')
-    table_name = table_name.replace(' ', '_')
 
     csv_upload_dir = f"./uploaded_files/csv_files/{table_name}"
     os.makedirs(csv_upload_dir, exist_ok=True)
@@ -175,16 +176,28 @@ def ingest_csv_into_postgres(file: UploadFile):
 
     column_definitions = []
     clean_col_array = []
+    random_rows_text = []
 
     df = pd.read_csv(file_location)
     columns = df.columns
     column_types = df.dtypes
+
+    # Get 5 random rows if there are more than 5 rows
+    if len(df) > 5:
+        random_rows = df.sample(5)
+    else:
+        random_rows = df.sample(len(df))
+
+    
 
     for col, dtype in zip(columns, column_types):
         postgres_type = dtype_mapping.get(str(dtype), 'TEXT')
         clean_col = sanitize_column_name(col)
         column_definitions.append(f"{clean_col} {postgres_type}")
         clean_col_array.append([clean_col, postgres_type])
+
+    for i in range(len(clean_col_array)):
+        random_rows_text.append(clean_col_array[i][0] + ": " + str(random_rows.iloc[0][i]))
 
     create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
     create_table_query += ", ".join(column_definitions) + ");"
@@ -211,16 +224,31 @@ def ingest_csv_into_postgres(file: UploadFile):
     except Exception as e:
         print(f"Error ingesting data into table {table_name}: {str(e)}")
         conn.rollback()
-    finally:
-        db.close_db_connection(conn)
 
+
+
+    create_embedding_table = f"""CREATE TABLE IF NOT EXISTS {table_name}_embedding (
+                id SERIAL PRIMARY KEY,
+                text TEXT,
+                embedding vector(3072)
+                );
+                """
     try:
-        process_csv_columns_to_kg(clean_col_array, table_name)
-    except Exception as e:
-        print(f"Error ingesting data into table {table_name}: {str(e)}")
+        cur.execute(create_embedding_table)
+        conn.commit()
 
-    cur.close()
-    conn.close()
+        for line in random_rows_text:
+            embedding = get_embedding(str(line))
+            cur.execute(f"""INSERT INTO {table_name}_embedding (text, embedding) VALUES (%s, %s)""", (str(line), embedding))
+            conn.commit()
+    except Exception as e:
+        print(f"Error creating embedding table {table_name}_embedding: {str(e)}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
+        db.close_db_connection(conn)
+    
 
 
     

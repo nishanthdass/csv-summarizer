@@ -1,5 +1,5 @@
 import React from 'react';
-import agentSketch from '../assets/agent-sketch.jpg';
+import agentSketch from '../assets/agent-sketch.png';
 
 const AboutProject: React.FC = () => {
   return (
@@ -8,15 +8,11 @@ const AboutProject: React.FC = () => {
       
       <h3>Objective</h3>
       <p>
-        This project aims to create an interactive smart table powered by a chatbot interface and multi-agent AI architecture. It enables SQL query generation, enriched insights from PDFs and CSVs, and automated data analytics to assist users in exploring, analyzing, and interpreting their data efficiently.
+        This project aims to create an interactive smart table powered by a chatbot interface and multi-agent AI architecture. It enables SQL query generation, enriched insights by combining information from PDFs, and automated table manipulation to assist users in exploring and interpreting their data efficiently.
       </p>
       
       <h3>Features</h3>
-      <p>
-        This project introduces several advanced functionalities to enhance user interaction and data analysis.
-      </p>
       <ul>
-        
         <li>
           <strong>Interactive Query Generation:</strong> Users can ask questions in natural language about their data.
           
@@ -34,24 +30,12 @@ const AboutProject: React.FC = () => {
           <strong>Augmented Data Insights:</strong> Users can provide context related to CSV data by uploading supporting PDFs.
           <ul>
           <p>
-            <li><span className='highlight-yellow'>Uses PDF data to generate insights for the user, supporting standalone Q&A retrievals and <span className='highlight-red'>image extractions from the PDF.</span></span></li>
+            <li><span className='highlight-yellow'>Agents pass infromation between PDF and CSV to generate insights for the user, supporting standalone Q&A retrievals and <span className='highlight-red'>image extractions from the PDF.</span></span></li>
             <li><span className='highlight-yellow'>Enhances retrievals by building knowledge graphs to form relationships between PDF(nodes such as chapters, pages, headers, lines) and CSV. PDF and CSV nodes are contextualized with semantic summaries and keywords.</span></li>
             <li><span className='highlight-yellow'>Clusters nodes from the PDF and CSV using natural language processing (NLP) to group related content by themes or topics. These clusters establish relationships between nodes from both sources, enabling contextual associations.</span></li>
             <li><span className='highlight-yellow'>Uses PDF data and contextual clusters to autocomplete cell content in newly added columns, leveraging relationships established in the knowledge graph.</span></li>
           </p>
           </ul>
-        </li>
-        <li>
-          <strong>Data Analytics:</strong> Uses Machine Learning and Agentic AI to analyze data patterns and trends.
-          
-          <ul>
-          <p> 
-            <li><span className='highlight-red'>Guides users through the data analytics process, helping them normalize, clean, and prepare data for modeling.</span></li>
-            <li><span className='highlight-red'>Provides visualizations to aid user understanding and assist in selecting the right model for their use case.</span></li>
-            <li><span className='highlight-red'>Runs predictive models and provides detailed metrics for evaluation.</span></li>
-          </p>
-          </ul>
-
         </li>
       </ul>
 

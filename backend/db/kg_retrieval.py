@@ -36,6 +36,26 @@ def build_retrieval_query(pdf_file_name):
             }} AS metadata
     """
 
+# def build_column_retrieval_query(table_name):
+#     return f"""
+#         WITH node, score AS closestScore
+#         ORDER BY closestScore DESC
+#         LIMIT 5
+#         MATCH (rowValue:RowValue)-[r:VALUE_OF]->(node:Column)
+#         WHERE node.tableName = "{table_name}"
+
+#         WITH node, closestScore, node.columnName AS columnName,
+#              collect({{ 
+#                 rowValueId: rowValue.rowValueId, 
+#                 value: rowValue.value 
+#              }}) AS rowValues
+
+#         RETURN 
+#             columnName, 
+#             rowValues AS values,
+#             closestScore AS score
+#     """
+
 
 
 def kg_retrieval_window(pdf_name):
@@ -58,4 +78,25 @@ def kg_retrieval_window(pdf_name):
     )
 
     return retriever_window
+
+# def kg_column_retrieval_window(pdf_name):
+#     vector_store_window = Neo4jVector.from_existing_index(
+#         embedding=OpenAIEmbeddings(
+#             openai_api_key=openai_var.openai_api_key,
+#             openai_api_base=openai_var.openai_endpoint,
+#             model=openai_var.openai_embedding_model
+#         ),
+#         url=neo4j_var.neo4j_uri,
+#         username=neo4j_var.neo4j_user,
+#         password=neo4j_var.neo4j_password,
+#         database=neo4j_var.neo4j_db,
+#         index_name=VECTOR_INDEX_NAME,
+#         text_node_property=VECTOR_SOURCE_PROPERTY,
+#         retrieval_query= build_column_retrieval_query(pdf_name)
+#     )
+
+#     retriever_window = vector_store_window.as_retriever(
+#     )
+
+#     return retriever_window
 

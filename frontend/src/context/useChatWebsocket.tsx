@@ -47,6 +47,10 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   const [ isChatOpen, setIsChatOpen ] = useState(false);
   const [ messages, setMessages ] = useState<MessageInstance[]>([]);
 
+  useEffect(() => {
+    console.log("Messages changed:", messages);
+  }, [messages]);
+
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectSocketRef = useRef(true);
 
@@ -125,16 +129,27 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         }
 
         if (message.event === "on_chat_model_stream") {
+          // console.log("on_chat_model_stream");
+          // console.log(messages);
+          // console.log(message);
           buildOnLastMessage(message);
         }
 
         if (message.event === "on_chat_model_end") {
-          console.log("on_chat_model_end: ", message);
           setTokenCountPerMessage(message);
+        }
 
+        if (message.event === "on_query_stream") {
+          console.log("on_query_stream");
+          // console.log(messages);
+          // console.log(message);
+          addToLastMessage(message);
         }
 
         if (message.event === "on_chain_end") {
+          // console.log("on_chain_end");
+          // console.log(messages);
+          // console.log(message);
           finishLastMessage(message);
         }
         
@@ -211,7 +226,6 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       time: message.time || "0",
     };
   
-    console.log("Adding new message:", newMessage);  // Debugging log
     setMessages((prevMessages) => [...prevMessages, newMessage]);
   };
   
@@ -233,6 +247,26 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       return updatedMessages;
     });
   };
+
+  const addToLastMessage = (deltaMessage: MessageInstance) => {
+    setMessages((prevMessages) => {
+      if (prevMessages.length === 0) {
+        console.warn("No messages to update.");
+        return prevMessages;
+      }
+      const updatedMessages = [...prevMessages];
+      const lastMessage = updatedMessages[updatedMessages.length - 1];
+      updatedMessages[updatedMessages.length - 1] = {
+        ...lastMessage,
+        message: lastMessage.message + deltaMessage.message,
+        time: deltaMessage.time,
+        visualizing_query: deltaMessage.visualizing_query,
+        viewing_query_label: deltaMessage.viewing_query_label
+      };
+  
+      return updatedMessages;
+    });
+  }
 
   const finishLastMessage = (message: MessageInstance) => {
     setMessages((prevMessages) => {

@@ -35,7 +35,7 @@ from llm_core.src.llm.agents import *
 from llm_core.src.utils.utility_function import *
 from llm_core.src.utils.chatbot_manager import ChatbotManager
 from llm_core.src.llm.input_layer import message_queue, start_chat_state
-from llm_core.src.llm.output_layer import start_next_agent_stream, char_agent_stream, end_agent_stream, usage_agent_stream
+from llm_core.src.llm.output_layer import start_next_agent_stream, char_agent_stream, end_agent_stream, usage_agent_stream, query_agent_stream
 from models.models import MessageInstance
 from llm_core.src.llm.function_layer import sql_agent_function
 from typing import Tuple, List
@@ -69,8 +69,12 @@ async def run_chatbots( session_id: str):
 
 
             state = await start_chat_state(manager, session_id, message)
+            # rprint("Starting state: ", state["messages"])
 
             thread_id = config['configurable']['thread_id']
+            # rprint("Thread ID: ", thread_id)
+            # rprint("Config: ", config)
+            # rprint("app state: ", app.get_state(config=config))
 
             is_interrupted = False
             traversing_graph = True
@@ -154,8 +158,6 @@ async def run_chatbots( session_id: str):
                         if not traversing_graph:
                             break
 
-
-                    interrupts = app.get_state(config)
                     # rprint("interrupts: ", interrupts.tasks)
 
                     interrupts = app.get_state(config)
@@ -210,26 +212,9 @@ async def handle_on_chain_start(
     if isinstance(data, dict) and "input" in data:
         input_data = data["input"]
         if isinstance(input_data, dict) and "next_agent" in input_data:
-            if "has_function_call" in input_data:
-                role = input_data['current_agent']
-                end_time = time.time()
-                if input_data["function_call"] == "sql_query":
-                    # rprint("Query: ", input_data['answer_query'])
-                    message_str = sql_agent_function(table_name=input_data['table_name'], query=input_data['answer_query'])
-                    finish_time = (end_time - time_table[str(role)])
-                    if "Result" in message_str:
-                        end_message = await end_agent_stream(manager, session_id, message_str["Result"], role, finish_time, str(input_data['visualizing_query']), str(input_data['viewing_query_label']))
-                        end_message = MessageInstance(**end_message)
-                        await safe_send(active_websockets, end_message, session_id)
-                        time_table[str(role)] = 0
-                    elif "Error" in message_str:
-                        end_message = await end_agent_stream(manager, session_id, message_str["Error"], role, finish_time, None, None)
-                        end_message = MessageInstance(**end_message)
-                        # rprint("end_message: ", end_message)
-                        await safe_send(active_websockets, end_message, session_id)
-                        time_table[str(role)] = 0
+            # rprint("handle_on_chain_start INPUT: ", input_data)
             next_agent = input_data["next_agent"]
-            if cur_agent != next_agent:
+            if cur_agent != next_agent and "has_function_call" not in input_data:
                 cur_agent = next_agent
                 if cur_agent != "__end__":
                     start_time = (time_table[str(next_agent)])
@@ -237,6 +222,32 @@ async def handle_on_chain_start(
                     holder_message = MessageInstance(**holder_message)
                     await safe_send(active_websockets, holder_message, session_id)
                     return cur_agent, next_agent
+            
+            if "has_function_call" in input_data:
+                role = input_data['current_agent']
+                end_time = time.time()
+                if input_data["function_call"] == "sql_query":
+                    # rprint("Query: ", input_data['answer_query'])
+                    # rprint("Table: ", input_data['table_name'], "Query: ", input_data['answer_query'],"role: ", role)
+                    message_str = sql_agent_function(table_name=input_data['table_name'], query=input_data['answer_query'], role=role)
+                    rprint("message_str: ", message_str)
+                    finish_time = (end_time - time_table[str(role)])
+                    if "Result" in message_str:
+                        end_message = await end_agent_stream(manager, session_id, message_str["Result"], role, finish_time, str(input_data['visualizing_query']), str(input_data['viewing_query_label']))
+                        end_message = MessageInstance(**end_message)
+                        await safe_send(active_websockets, end_message, session_id)
+                        time_table[str(role)] = 0
+                    elif "Error" in message_str:
+                        end_message = await end_agent_stream(manager, session_id, message_str["Error"] + ", while executing " + str(input_data['answer_query']), role, finish_time, None, None)
+                        end_message = MessageInstance(**end_message)
+                        # rprint("end_message: ", end_message)
+                        await safe_send(active_websockets, end_message, session_id)
+                        time_table[str(role)] = 0
+                if input_data["function_call"] == "sql_manipulator_query":
+                    finish_time = (end_time - time_table[str(role)])
+                    end_message = await query_agent_stream(manager, session_id, input_data['answer_query'], role, finish_time, str(input_data['answer_query']), str(input_data['viewing_query_label']))
+                    end_message = MessageInstance(**end_message)
+                    await safe_send(active_websockets, end_message, session_id)
     return cur_agent, next_agent
 
 
@@ -282,6 +293,7 @@ async def handle_on_chain_end(
     time_table: dict,
     traversing_graph: bool
 ):
+    global app
     if "output" in event['data'] and isinstance(event['data']['output'], dict):
         # keys = event['data']['output'].keys()
         # rprint("handle_on_chain_end OUTPUT keys: ", keys)
@@ -289,5 +301,15 @@ async def handle_on_chain_end(
             time_table[str(event['data']['output']['current_agent'])] = 0
             if event['data']['output']['next_agent'] == "__end__":
                 traversing_graph = False
+                # chatbot = await manager.get_chatbot(session_id)
+                # config = chatbot["config"]
+                # rprint("event['data']['output']['messagess']: ", event['data']['output']['messages'][-1])
+                # app.update_state(
+                #     config=config,
+                #     values={"messages": event["data"]["output"]["messages"]},
+                # )
+     
+                # rprint("app state: ", app_state)
+                # rprint("app state: ", app.get_state(config=config))
 
     return traversing_graph

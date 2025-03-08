@@ -3,16 +3,17 @@ from llm_core.src.prompt_engineering.templates import *
 from llm_core.src.prompt_engineering.chains import json_parser_prompt_chain, trimmer, kg_retrieval_chain
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk
 from rich import print as rprint
-from llm_core.src.prompt_engineering.chains import call_sql_agent
+from llm_core.src.prompt_engineering.chains import call_sql_agent, call_sql_manipulator_agent
 from langgraph.types import interrupt, Command
 from llm_core.src.llm.function_layer import sql_agent_function
 import time
 import logging
 import json
 import re
+import uuid
 
 
-time_table = { "supervisor": 0, "pdf_agent": 0, "call_sql_agent": 0, "sql_agent": 0, "sql_validator": 0, "data_analyst": 0, "human_input": 0, "cleanup": 0}
+time_table = { "supervisor": 0, "pdf_agent": 0, "call_sql_agent": 0, "sql_agent": 0, "sql_manipulator_agent": 0, "data_analyst": 0, "human_input": 0, "cleanup": 0}
 
 
 # --- Define Node Functions ---
@@ -39,7 +40,7 @@ async def supervisor_node(state: MessageState) -> MessageState:
         prompt = TABLEANDPDFPROMPTTEMPLATE
         state["agent_step"] = 1
 
-
+    # rprint("Conversation History: ", conversation_history)
     inputs = {
         "user_message": trimmed_messages[-1].content if trimmed_messages else "",
         "table_name": state["table_name"],
@@ -62,10 +63,8 @@ async def supervisor_node(state: MessageState) -> MessageState:
 
     if response["next_agent"] == "supervisor":
         state['next_agent'] = "__end__"
-        return state
-
-    if response["next_agent"] == "sql_agent" or response["next_agent"] == "data_analyst" or response["next_agent"] == "pdf_agent":
-        return state
+    
+    return state
     
 
 async def pdf_agent_node(state: MessageState) -> MessageState:
@@ -96,6 +95,44 @@ async def pdf_agent_node(state: MessageState) -> MessageState:
     return state
 
 
+async def sql_manipulator_agent_node(state: MessageState) -> MessageState:
+    """SQL Manipulator Agent Node (sql_manipulator_agent_node -> __end__)"""
+    time_table["sql_manipulator_agent"] = time.time()
+    state["current_agent"] = "sql_manipulator_agent"
+    user_message = state["question"].content
+
+    model = "gpt-4o"
+
+    try:
+        action = await call_sql_manipulator_agent(model, state)
+        response = action["output"]
+        match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
+
+        if match:
+            json_str = match.group(1).strip()  # Extract JSON part only
+            response = json.loads(json_str)
+        else:
+            raise json.JSONDecodeError("No valid JSON found", response, 0)
+    except Exception as e:
+        logging.error(f"Error invoking chain: {e}")
+        response = None
+
+    if response["status"] == "success":
+        state["messages"].append(AIMessage(content=response['answer'] + response['answer_query']))
+
+        state["answer_query"] = response["answer_query"]
+        state["answer"] = AIMessage(content=response["answer"])
+        state["has_function_call"] = True
+        state["function_call"] = "sql_manipulator_query"
+        state["viewing_query_label"] = response["viewing_query_label"]
+    else:
+        state["messages"].append(AIMessage(content=response))
+        state["answer"] = AIMessage(content=response["answer"])
+
+    state["next_agent"] = "__end__"
+    return state
+
+
 async def sql_agent_node(state: MessageState) -> MessageState:
     """SQL Agent Node (SQL Agent Node -> SQL Validator -> __end__)"""
 
@@ -108,10 +145,10 @@ async def sql_agent_node(state: MessageState) -> MessageState:
         model = "gpt-4o-mini"
     # model = "gpt-4o"
     try:
-        rprint("state question: ", state["question"])
         sql_result = await call_sql_agent(model, state)
         
         response = sql_result["output"]
+        # rprint("SQL Agent Response: ", response)
 
         # Extract JSON content between ```json and ```
         match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
@@ -124,30 +161,42 @@ async def sql_agent_node(state: MessageState) -> MessageState:
 
     except json.JSONDecodeError:
         rprint(f"JSONDecodeError: {response}")
+        state["messages"].append(AIMessage(content=response))
+        state["answer"] = AIMessage(content=response)
+        if state["is_multiagent"] is True:
+            state["next_agent"] = "data_analyst"
+        else:
+            state["next_agent"] = "__end__"
 
+        return state
 
     answer_query = response["answer_query"]
     visualizing_query = response["visualizing_query"]
     viewing_query_label = response["viewing_query_label"]
-    rprint("answer_query: ", answer_query)
-    rprint("visualizing_query: ", visualizing_query)
+
     try:
-        query_response = sql_agent_function(table_name=state["table_name"], query=answer_query)
+        
+        query_response = sql_agent_function(table_name=state["table_name"], query=answer_query, role=state["current_agent"])
+
         if "Error" not in query_response:
-            state["agent_scratchpads"].append(query_response)
+            agent_notes = "Query Successful: " + query_response["Result"]
+            if state["is_multiagent"] is True:
+                state["agent_step"] = 4
+        else:
+            agent_notes = "Query Error: " + query_response["Error"] + " when using query: " + answer_query
             if state["is_multiagent"] is True:
                 state["agent_step"] = 3
-        else:
-            state["agent_scratchpads"].append("This query failed, try something else: " + answer_query)
-        mod_query_dict = f"answer_query: {answer_query}, visualizing_query: {visualizing_query}, viewing_query_label: {viewing_query_label}"
+
+        # rprint("SQL Agent Notes: ", agent_notes)
+        # rprint("agent step: ", state["agent_step"])
+        state["agent_scratchpads"].append(AIMessage(content=agent_notes))
+
 
         state["answer_query"] = answer_query
         state["visualizing_query"] = visualizing_query
         state["viewing_query_label"] = viewing_query_label
         state["has_function_call"] = True
         state["function_call"] = "sql_query"
-
-        state["messages"].append(AIMessage(content=mod_query_dict))
 
     except Exception as e:
         rprint(f"Unexpected error: {str(e)}")
@@ -156,6 +205,10 @@ async def sql_agent_node(state: MessageState) -> MessageState:
         state["next_agent"] = "data_analyst"
     else:
         state["next_agent"] = "__end__"
+
+    # rprint("Conversation in SQL Agent: ", state["messages"])
+
+    # rprint("Sql State: ", state)
 
     return state
 
@@ -172,20 +225,19 @@ async def data_analyst_node(state: MessageState) -> MessageState:
         agent_scratchpad = ""
 
     inputs = {
-        "user_message": trimmed_messages,
-        "conversation_history": state["messages"],
+        "agent_step": state["agent_step"],
         "agent_scratchpads": agent_scratchpad,
+        "user_message": trimmed_messages,
         "pdf_name": state["pdf_name"],
         "columns_and_types": state["columns_and_types"],
         "table_name": state["table_name"],
-        "agent_step": state["agent_step"]
     }
     model = "gpt-4o"
 
-    rprint("inputs step: ", state["agent_step"])
-    rprint("inputs agent_scratchpads: ", state["agent_scratchpads"])
+    # rprint("inputs step: ", state["agent_step"])
+    # rprint("inputs agent_scratchpads: ", agent_scratchpad)
     parsed_result = await json_parser_prompt_chain(DATAANALYSTPROMPTTEMPLATE, model, inputs)
-    rprint("parsed_result: ", parsed_result)
+    # rprint("parsed_result: ", parsed_result)
 
     state["messages"].append(AIMessage(content=f"{parsed_result['answer']}"))
     state["messages"].append(AIMessage(content=f"{parsed_result["question"]}"))
@@ -221,4 +273,5 @@ async def human_input(state: MessageState):
 
 async def cleanup_node(state: MessageState) -> MessageState:
     time_table["cleanup"] = time.time()
-    return {"messages": [], "next_agent": "__end__"}
+    rprint("Cleanup Node Messages: ", state["messages"])
+    return state

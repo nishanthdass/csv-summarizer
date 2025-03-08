@@ -192,7 +192,6 @@ export const useTableSelection = () => {
           };
         }
         else {
-          console.log('Insert Cell');
           return {
             ...prevSelections,
             [currentTableName]: {
@@ -222,7 +221,6 @@ export const useTableSelection = () => {
 
       // retrun oldSelection
       if (numberOfSelectedCells === lenHeader) {
-        console.log("Select Row and remove cells");
         return {
           ...prevSelections,
           [currentTableName]: {
@@ -232,7 +230,6 @@ export const useTableSelection = () => {
           },
       }
       }else if (rowAlreadySelected && numberOfSelectedCells === 0) {
-          console.log('Remove Row and Insert Cells');
           const newCells = currentTable?.data.header 
               ? Object.entries(currentTable.data.header).map(([columnName]) => ({
                   ctid,

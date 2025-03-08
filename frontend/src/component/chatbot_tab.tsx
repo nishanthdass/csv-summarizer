@@ -4,12 +4,15 @@ import { useTasks } from '../context/useTaskContext';
 import { useChatWebSocket } from '../context/useChatWebsocket';
 import { useFetchDataDatabase } from '../hooks/fetch_hooks/useFetchDataDatabase';
 import { useTableSelection } from '../hooks/useTableSelection';
+import { useFileSidePanelOperations } from '../hooks/useFileSidePanelOperations';
+
 
 
 const ChatbotTab = () => {
 
 
 const { handleSqlQuerySelections } = useTableSelection();
+const { loadTableFromDatabase} = useFileSidePanelOperations();
 const { currentTable } = useDataContext();
 
 const { fetchRunSQLQuery } = useFetchDataDatabase();
@@ -18,6 +21,7 @@ const { tasks } = useTasks();
 const { isConnected, sendMessage, messages } = useChatWebSocket();
 const [input, setInput] = useState('');
 const [animatedDots, setAnimatedDots] = useState('');
+const [collapsedStates, setCollapsedStates] = useState<Record<number, boolean>>({});
 
 const tasksForCurrentTable = tasks.filter(
     (task) => task.name === currentTable?.name
@@ -37,10 +41,11 @@ useEffect(() => {
     }
 }, [messages]);
 
-const handleClickSql = async(message: string, table_name: string) => {
+const handleClickSql = async(message: string, table_name: string, role: string) => {
     if (isConnected) {
         try {
-            const response = await fetchRunSQLQuery(message, table_name);
+            const response = await fetchRunSQLQuery(message, table_name, role);
+            loadTableFromDatabase(table_name);
             handleSqlQuerySelections?.(response.data);
         } catch (error) {
             console.error(error);
@@ -82,31 +87,105 @@ return (
             
             {messages.map((message, index) =>
 
-                typeof message.answer_query === 'string' && message.answer_query.length > 0  ? (
-                    <span key={index} className={`message-line ${message.role}`} >
+                typeof message.visualizing_query === 'string' && message.visualizing_query.length > 0  ? (
+                    <span key={index} className={`message-line ${message.role}`}>
                     <strong>{message.role}:</strong>
                     
                     {message.message === "" ? (
                         animatedDots
                     ) : (
-                        <span dangerouslySetInnerHTML={{ __html: message.message }} />
+                    <span dangerouslySetInnerHTML={{ __html: message.message }} />
                     )}
                     
                     <p>
-                    <button className="sql-query-button" onClick={() => message.answer_query && handleClickSql(message.answer_query, message.table_name)}>{message.answer_query_label}</button>
+                    <button className="sql-query-button" onClick={() => message.visualizing_query && handleClickSql(message.visualizing_query, message.table_name, message.role)}>{message.viewing_query_label}</button>
                     </p>
+                    
+                    {message.role !== "User" && message.token_object && message.token_object.length > 0 && (
+                    <>
                     <br/>
                     <br/>
-                    {message.role === "User" ?(""): (<div className='chat-time'>Response time: {String(message.time)} seconds</div>)}
+                    <table className="token-table">
+                        <thead>
+                        <tr>
+                            <th>Run ID</th>
+                            <th>Model Name</th>
+                            <th>Tool call</th>
+                            <th>Input Tokens</th>
+                            <th>Output Tokens</th>
+                            <th>Total Tokens</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {message.token_object.map((token, i) => (
+                            <tr key={i}>
+                            <td>{token.run_id || "N/A"}</td>
+                            <td>{token.model_name}</td>
+                            <td>{token.tool_call_name}</td>
+                            <td>{token.input_tokens}</td>
+                            <td>{token.output_tokens}</td>
+                            <td>{token.total_tokens}</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                    </>
+                    )}
+                    <div className='chat-info'>
+                    {message.role !== "User" && (
+                        <>
+                        <br/>
+                        <div className='chat-thread-id'>Thread ID: {String(message.thread_id)}</div>
+                        <div className='chat-time'>Response time: {String(message.time)} seconds</div>
+                        </>
+                        )}
+                    </div>
                     </span>
                 ) : (
                 <span key={index} className={`message-line ${message.role}`} >
                 <strong>{message.role}:</strong>
                 
                 {message.message === "" ? animatedDots : "  " + message.message}
+            
+                {message.role !== "User" && message.token_object && message.token_object.length > 0 && (
+                    <>
+                    <br/>
+                    <br/>
+                    <table className="token-table">
+                        <thead>
+                        <tr>
+                            <th>Run ID</th>
+                            <th>Model Name</th>
+                            <th>Tool call</th>
+                            <th>Input Tokens</th>
+                            <th>Output Tokens</th>
+                            <th>Total Tokens</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {message.token_object.map((token, i) => (
+                            <tr key={i}>
+                            <td>{token.run_id || "N/A"}</td>
+                            <td>{token.model_name}</td>
+                            <td>{token.tool_call_name}</td>
+                            <td>{token.input_tokens}</td>
+                            <td>{token.output_tokens}</td>
+                            <td>{token.total_tokens}</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                    </>
+                    )}
+                <div className='chat-info'>
                 <br/>
-                <br/>
-                {message.role === "User" ?(""): (<div className='chat-time'>Response time: {String(message.time)} seconds</div>)}
+                {message.role !== "User" && (
+                    <>
+                    <div className='chat-thread-id'>Thread ID: {String(message.thread_id)}</div>
+                    <div className='chat-time'>Response time: {String(message.time)} seconds</div>
+                    </>
+                    )}
+                </div>
                 </span>
                 )
             )}

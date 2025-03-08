@@ -153,7 +153,6 @@ async def get_table(table: TableNameRequest, request: Request):
 
 @router.post("/set-pdf", status_code=200)
 async def set_pdf(pdf_name: PdfNameRequest, request: Request):
-    rprint("Set PDF: ", pdf_name, request)
     try: 
         session = await verify_session(request)
         print(f"chat_server for session: {session}")
@@ -162,7 +161,7 @@ async def set_pdf(pdf_name: PdfNameRequest, request: Request):
 
     if not pdf_name.pdf_name:
         try:
-            await alter_pdf_name(session['name'], None)
+            await alter_pdf_name(session['name'], None, manager)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -189,7 +188,7 @@ async def set_pdf(pdf_name: PdfNameRequest, request: Request):
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
         
         try:
-            await alter_pdf_name(session['name'], file_name_minus_extension)
+            await alter_pdf_name(session['name'], file_name_minus_extension, manager)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -240,24 +239,24 @@ async def get_pdf(pdf_name: str, request: Request):
 #     return get_task(table_name, task_id)
 
 
+
 @router.websocket("/ws/chat-client")
 async def websocket_endpoint(websocket: WebSocket):
-
-    await websocket.accept()
-    
-    try: 
-        session = await verify_session(websocket)
-        active_websockets[session['name']] = websocket
-        print(f"websocket_endpoint for session: {session}")
-    except Exception as e:
-        print(f"Unexpected error in WebSocket endpoint: {e}")
-
+    session = {}
     try:
+        session = await verify_session(websocket)
+        await websocket.accept()  # Ensure WebSocket is accepted first
+
+        if session['name'] not in active_websockets:
+            active_websockets[session['name']] = websocket
+            print(f"WebSocket endpoint for session: {session}")
+
         while True:
-            print("Waiting for message in websocket: ", active_websockets[session['name']])
-            data = await websocket.receive_json()
+            print("Waiting for message in WebSocket: ", session)
+            data = await websocket.receive_json()  # Only use 'websocket'
             message = MessageInstance(**data)
             await message_queue.put(message)
+
     except WebSocketDisconnect:
         print(f"WebSocket disconnected for session: {session}")
     except Exception as e:
@@ -265,7 +264,6 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         print(f"Closing WebSocket connection for session: {session}")
         active_websockets.pop(session['name'], None)
-
 
 @router.post("/chat-server")
 async def chat_server(request: Request):
@@ -284,11 +282,11 @@ async def chat_server(request: Request):
             await start_chatbot(session['name'], manager)
             task = asyncio.create_task(run_chatbots(session['name']))
             tasks[session['name']] = task
-            # print(f"Started chatbot for session_id: {session}: ", tasks)
         else:
             print("chat-server task already exists for session: ", session)
             task = tasks.get(session['name'])
             print("The task is: ", task)
+
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -306,7 +304,9 @@ async def sql_query(request: Request):
 
     try:
         body = await request.json()
-        result = run_query(body['table_name'], body['query'])
+        rprint("body: ", body)
+        result = run_query(body['table_name'], body['query'], body['role'])
+        rprint("result: ", result)
         return JSONResponse(content={"success": True, "data": result})
 
     except Exception as e:
@@ -316,7 +316,6 @@ async def sql_query(request: Request):
     
 
 async def verify_session(request: Request):
-    print("Verifying session: ", request)
     if "user_data" not in request.session:
         print("Invalid session: ", request.session)
         raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid session")

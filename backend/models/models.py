@@ -13,7 +13,15 @@ class MessageInstance(BaseModel):
     event: Optional[str] = None
     message: Optional[str] = None
     time: Optional[float] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    run_id: Optional[str] = None
+    thread_id: Optional[str] = None
+    tool_call_name: Optional[str] = None
+    model_name: Optional[str] = None
     answer_query: Optional[str] = None
+    visualizing_query: Optional[str] = None
     viewing_query_label: Optional[str] = None
     has_function_call: Optional[bool] = None
 
@@ -39,7 +47,13 @@ class MessageState(TypedDict):
     agent_scratchpads: list
     columns_and_types: str
     answer_query: str
+    visualizing_query: str
     viewing_query_label: str
+    is_multiagent: bool
+    agent_step: int
+    runtime_queries: str
+    query_failed: str
+    
 
 
 class Route(BaseModel):

@@ -23,28 +23,51 @@ async def call_sql_agent(model, state: MessageState) -> MessageState:
     sql_agent_for_table = create_sql_agent( llm=model, 
                                             toolkit=toolkit,
                                             agent_type="openai-tools",
-                                            verbose=True,
+                                            verbose=False,
                                             agent_executor_kwargs={"return_intermediate_steps": True})
-
+    
+    trimmed_messages = trimmer(state)
     question = state["question"]
+    # rprint("Question: ", question.content)
+    # rprint("Users last message: ", trimmed_messages[-1])
 
-    augmented_question = f"""        
-        The user's question is: {question.content}
+    if state["agent_step"] > 0:
+        rprint("Agent Step: ", state["agent_step"])
+        rprint("Trimmed Messages if interupted by human unsliced: ", trimmed_messages)
+        trimmed_messages = trimmed_messages[len(trimmed_messages) - state["agent_step"]:]
+        rprint("Trimmed messages if interupted by human: ", trimmed_messages)
+    # else:
+    #     rprint("Trimmed Messages: ", trimmed_messages)
+
+    augmented_question = f"""
+        You are a SQL specialist who can write SQL queries to answer the user's question. Sometimes your query does not work and the user will need to provide you with additional information.
+
+        Look through the prior conversation history for context and answer the user's question.
+        The user's intial question is: {question.content}
+        Users last message: {trimmed_messages[-1]}
+        The conversation history is: {trimmed_messages}
+
 
         Return in JSON format: 
         "{{\"current_agent\": \"sql_agent\", 
-            \"next_agent\": \"sql_agent\", 
+            \"next_agent\": \"human_input(if the query fails) or __end__\", 
             \"question\": \"None\",
-            \"answer_query\": \"Query that answers the question and is successfully tested\",
-            \"visualizing_query\": \"query that visualizes the answer (has ctids)\",
-            \"viewing_query_label\": \"label that describes the visualizing query\"}}\n\n"
+            \"answer\": \"<_START_>  Description of created query and why its the best query to answer the question. If the query fails, then share the answer query that failed verbatim in the answer, explain the reason why it failed, provide suggestions for a different query and wait for the user to respond<_END_>\",
+            \"query_type\": \"Either retrieval, manipulation, permission or transaction\",
+            \"answer_retrieval_query\": \"Either a Failed Query, Retrieval Query that answers the question and is successfully tested, Manipulation Query that alters the database, Permission Query that grants or revokes permissions, or Transaction Query that starts, commits, or rollbacks a transaction.\",
+            \"visualize_retrieval_query\": \"If Retrieval Query, then insert Query that visualizes the answer (has ctids), else empty string\",
+            \"visualize_retrieval_label\": \"If Retrieval Query, then insert the label that describes the visualize_retrieval_query, else empty string \",
+            \"perform_manipulation_query\": \"If Manipulation Query, then insert Query that alters the database or database, else empty string\",
+            \"perform_manipulation_label\": \"If Manipulation Query, then insert the label that describes the perform_manipulation_query, else empty string\",
+            }}\n\n"
         """
     
+
     if state["is_multiagent"] is True:
         prompt = SQLAGENTMULTIAGENTPROMPTTEMPLATE + augmented_question
     else:
-        prompt = SQLAGENTPROMPTTEMPLATE + augmented_question
-
+        prompt = augmented_question + SQLAGENTPROMPTTEMPLATE
+        
     sql_result = await sql_agent_for_table.ainvoke(prompt)
 
     return sql_result
@@ -73,7 +96,8 @@ async def call_sql_manipulator_agent(model, state: MessageState) -> MessageState
         "{{\"current_agent\": \"sql_agent\", 
             \"next_agent\": \"sql_agent\", 
             \"question\": \"None\",
-            \"answer\": \"<_START_> Description of created query <_END_>\",
+            \"answer\": \"<_START_> Description of created query, or issues with the question<_END_>\",
+            \"query_type\": \"Either retrieval, manipulation, permission or transaction\",
             \"answer_query\": \"Query needed to alter the database\",
             \"viewing_query_label\": \"Label that describes the query needed to alter the database\",
             \"status\": \"success if query is successfully created, else fail\"}}\n\n"

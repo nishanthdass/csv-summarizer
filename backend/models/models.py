@@ -20,10 +20,12 @@ class MessageInstance(BaseModel):
     thread_id: Optional[str] = None
     tool_call_name: Optional[str] = None
     model_name: Optional[str] = None
-    answer_query: Optional[str] = None
+    answer_retrieval_query: Optional[str] = None
     visualizing_query: Optional[str] = None
     viewing_query_label: Optional[str] = None
     has_function_call: Optional[bool] = None
+    
+    
 
 
 class TableNameRequest(BaseModel):
@@ -46,7 +48,7 @@ class MessageState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     agent_scratchpads: list
     columns_and_types: str
-    answer_query: str
+    answer_retrieval_query: str
     visualizing_query: str
     viewing_query_label: str
     is_multiagent: bool

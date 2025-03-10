@@ -145,7 +145,8 @@ return (
                 <span key={index} className={`message-line ${message.role}`} >
                 <strong>{message.role}:</strong>
                 
-                {message.message === "" ? animatedDots : "  " + message.message}
+                {message.message === "" ? 
+                    animatedDots : <span dangerouslySetInnerHTML={{ __html: message.message }} />}
             
                 {message.role !== "User" && message.token_object && message.token_object.length > 0 && (
                     <>

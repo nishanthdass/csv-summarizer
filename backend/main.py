@@ -38,14 +38,12 @@ app.include_router(router)
 
 @app.get("/set-session")
 async def set_session(request: Request):
-    print("Setting session data")
     request.session["user_data"] = {"name": "John Doe", "role": "admin"}
     return JSONResponse({"message": "Session data set"})
 
 
 @app.get("/get-session")
 async def get_session(request: Request):
-    print("Getting session data")
     user_data = request.session.get("user_data")
     if not user_data:
         # Return 404 status with a message

@@ -1,11 +1,6 @@
-import asyncio
 from models.models import MessageInstance
 from langchain_core.messages import HumanMessage
 from llm_core.src.utils.utility_function import *
-
-message_queue = asyncio.Queue()
-hold_messages = {}
-
 
 state = {
                 "current_agent": None,
@@ -17,18 +12,22 @@ state = {
                 "messages": None,
                 "agent_scratchpads": [],
                 "columns_and_types": None,
-                "answer_query": None,
-                "viewing_query_label": None,
+                "query_type": None,
+                "answer_retrieval_query": None,
+                "visualize_retrieval_query": None,
+                "visualize_retrieval_label": None,
+                "perform_manipulation_query": None,
+                "perform_manipulation_label": None,
                 "has_function_call": None,
                 "function_call": None,
-                "is_multiagent": None,
+                "is_multiagent": False,
                 "agent_step": 0,
                 "runtime_queries": "",
                 "query_failed": None
             }
 
 
-async def start_chat_state(manager, session_id, message: MessageInstance):
+async def set_chat_state(manager, session_id, message: MessageInstance):
     state = {
         "current_agent": None,
         "next_agent": "supervisor",
@@ -39,11 +38,15 @@ async def start_chat_state(manager, session_id, message: MessageInstance):
         "messages": [HumanMessage(content=message.message)],
         "agent_scratchpads": [],
         "columns_and_types": await manager.get_chatbot_columns_and_types(session_id),
-        "answer_query": None,
-        "viewing_query_label": None,
+        "query_type": None,
+        "answer_retrieval_query": None,
+        "visualize_retrieval_query": None,
+        "visualize_retrieval_label": None,
+        "perform_manipulation_query": None,
+        "perform_manipulation_label": None,
         "has_function_call": None,
         "function_call": None,
-        "is_multiagent": None,
+        "is_multiagent": False,
         "agent_step": 0,
         "runtime_queries": "",
         "query_failed": None
@@ -51,3 +54,29 @@ async def start_chat_state(manager, session_id, message: MessageInstance):
 
     return state
 
+async def set_sql_chat_state(manager, session_id, message: MessageInstance):
+    state = {
+        "current_agent": None,
+        "next_agent": "sql_agent",
+        "question": HumanMessage(content=message.message),
+        "answer": None,
+        "table_name": await manager.get_chatbot_table_name(session_id),
+        "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+        "messages": [HumanMessage(content=message.message)],
+        "agent_scratchpads": [],
+        "columns_and_types": await manager.get_chatbot_columns_and_types(session_id),
+        "query_type": None,
+        "answer_retrieval_query": None,
+        "visualize_retrieval_query": None,
+        "visualize_retrieval_label": None,
+        "perform_manipulation_query": None,
+        "perform_manipulation_label": None,
+        "has_function_call": None,
+        "function_call": None,
+        "is_multiagent": False,
+        "agent_step": 0,
+        "runtime_queries": "",
+        "query_failed": None
+    }
+
+    return state

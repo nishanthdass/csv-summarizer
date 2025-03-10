@@ -10,7 +10,6 @@ import time
 import logging
 import json
 import re
-import uuid
 
 
 time_table = { "supervisor": 0, "pdf_agent": 0, "call_sql_agent": 0, "sql_agent": 0, "sql_manipulator_agent": 0, "data_analyst": 0, "human_input": 0, "cleanup": 0}
@@ -135,27 +134,33 @@ async def sql_manipulator_agent_node(state: MessageState) -> MessageState:
 
 async def sql_agent_node(state: MessageState) -> MessageState:
     """SQL Agent Node (SQL Agent Node -> SQL Validator -> __end__)"""
+    rprint("SQL Agent Node")
+    # rprint("State: ", state)
 
     state["current_agent"] = "sql_agent"
 
     time_table["sql_agent"] = time.time()
-    if state["is_multiagent"] is True:
-        model = "gpt-4o"
-    else:
-        model = "gpt-4o-mini"
-    # model = "gpt-4o"
+
+    model = "gpt-4o"
+
     try:
-        sql_result = await call_sql_agent(model, state)
-        
-        response = sql_result["output"]
-        # rprint("SQL Agent Response: ", response)
-
-        # Extract JSON content between ```json and ```
-        match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
-
-        if match:
-            json_str = match.group(1).strip()  # Extract JSON part only
-            response = json.loads(json_str)
+        if state["next_agent"] != "human_input":
+            # rprint("Calling SQL Agent: ", state["next_agent"])
+            sql_result = await call_sql_agent(model, state)
+            response = sql_result["output"]
+            # rprint("Response from SQL Agent: ", response)
+            match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
+            if match:
+                json_str = match.group(1).strip()  # Extract JSON part only
+                response = json.loads(json_str)
+            state["next_agent"] = response["next_agent"]
+            rprint("Next Agent: ", state["next_agent"])
+            if state["next_agent"] == "human_input":
+                    state["agent_step"] = 4
+                    rprint("Agent Step after Calling SQL Agent: ", state["agent_step"])
+            state["messages"].append(AIMessage(content=response["answer"]))
+            
+            # rprint("After Calling SQL Agent: ", state["next_agent"])
         else:
             raise json.JSONDecodeError("No valid JSON found", response, 0)
 
@@ -169,52 +174,65 @@ async def sql_agent_node(state: MessageState) -> MessageState:
             state["next_agent"] = "__end__"
 
         return state
+    
+    state["query_type"] = response["query_type"]
 
-    answer_query = response["answer_query"]
-    visualizing_query = response["visualizing_query"]
-    viewing_query_label = response["viewing_query_label"]
+    # rprint("state['next_agent']: ", state["next_agent"])
 
     try:
-        
-        query_response = sql_agent_function(table_name=state["table_name"], query=answer_query, role=state["current_agent"])
-
-        if "Error" not in query_response:
-            agent_notes = "Query Successful: " + query_response["Result"]
-            if state["is_multiagent"] is True:
+        if state["query_type"] == "retrieval":
+            answer_retrieval_query = response["answer_retrieval_query"]
+            visualize_retrieval_query = response["visualize_retrieval_query"]
+            visualize_retrieval_label = response["visualize_retrieval_label"]
+            
+            retrival_query_result = sql_agent_function(table_name=state["table_name"], query=answer_retrieval_query, role=state["current_agent"])
+            rprint("Next Agent: ", state["next_agent"])
+            if state["next_agent"] == "human_input":
                 state["agent_step"] = 4
-        else:
-            agent_notes = "Query Error: " + query_response["Error"] + " when using query: " + answer_query
+                rprint("Agent Step after sql_agent_function: ", state["agent_step"])
+            if "Error" not in retrival_query_result:
+                successful_query = "Query Successful: " + retrival_query_result["Result"]
+                state["messages"].append(AIMessage(content=successful_query + " when using query: " + answer_retrieval_query))
+                state["answer_retrieval_query"] = answer_retrieval_query
+                state["visualize_retrieval_query"] = visualize_retrieval_query
+                state["visualize_retrieval_label"] = visualize_retrieval_label
+                state["has_function_call"] = True
+                state["query_failed"] = False
+                if state["is_multiagent"] is True:
+                    state["agent_step"] = 4
+            else:
+                agent_notes = "<START> Query Error: " + retrival_query_result["Error"] + " when using query: " + answer_retrieval_query + " <END>"
+                state["messages"].append(AIMessage(content=agent_notes))
+                state["query_failed"] = True
+                state["has_function_call"] = True
+                state["answer_retrieval_query"] = answer_retrieval_query
+                if state["is_multiagent"] is True:
+                    state["agent_step"] = 3
+
+            
             if state["is_multiagent"] is True:
-                state["agent_step"] = 3
+                state["agent_scratchpads"].append(AIMessage(content=agent_notes))
 
-        # rprint("SQL Agent Notes: ", agent_notes)
-        # rprint("agent step: ", state["agent_step"])
-        state["agent_scratchpads"].append(AIMessage(content=agent_notes))
-
-
-        state["answer_query"] = answer_query
-        state["visualizing_query"] = visualizing_query
-        state["viewing_query_label"] = viewing_query_label
-        state["has_function_call"] = True
-        state["function_call"] = "sql_query"
 
     except Exception as e:
         rprint(f"Unexpected error: {str(e)}")
 
     if state["is_multiagent"] is True:
         state["next_agent"] = "data_analyst"
+    
+    if state["next_agent"] == "human_input":
+        # rprint("State['messages']: ", state["messages"])
+        rprint("Interupt in Human Input Node")
+        return Command(goto="human_input", update={"agent_step": 4})    
     else:
         state["next_agent"] = "__end__"
-
-    # rprint("Conversation in SQL Agent: ", state["messages"])
-
-    # rprint("Sql State: ", state)
-
+    
     return state
 
 
 async def data_analyst_node(state: MessageState) -> MessageState:
     """Data Analyst Node ((Data Analyst Node <->  Human Input) -> Cleanup -> __end__)"""
+    rprint("Data Analyst Node")
     
     time_table["data_analyst"] = time.time()
     trimmed_messages = trimmer(state)
@@ -247,7 +265,7 @@ async def data_analyst_node(state: MessageState) -> MessageState:
 
     if parsed_result["next_agent"] == "human_input":
         rprint("Interupt in Data Analyst Node")
-        return Command(goto="human_input")
+        return Command(goto="human_input", state=state)
     else:
         state["next_agent"] = parsed_result["next_agent"]
         # rprint("parsed_result: ", parsed_result)
@@ -258,18 +276,17 @@ async def data_analyst_node(state: MessageState) -> MessageState:
 async def human_input(state: MessageState):
     """Human Input Node to get user input and communicate with Data Analyst"""
     rprint("Human Input Node")
+    rprint("human_input State: ", state)
 
     human_message = interrupt("human_input")
 
-    return {
-        "messages": [
-            {
-                "role": "human",
-                "content": human_message
-            }
-        ],
-        "next_agent": "data_analyst"
-    }
+    rprint("Human Message: ", human_message)
+    state["messages"].append(HumanMessage(content=human_message))
+    state["next_agent"] = "sql_agent"
+    state["agent_step"] = 4
+    rprint("Agent Step after human_input: ", state["agent_step"])
+
+    return state
 
 async def cleanup_node(state: MessageState) -> MessageState:
     time_table["cleanup"] = time.time()

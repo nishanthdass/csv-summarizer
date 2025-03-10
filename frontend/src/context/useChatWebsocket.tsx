@@ -47,9 +47,9 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   const [ isChatOpen, setIsChatOpen ] = useState(false);
   const [ messages, setMessages ] = useState<MessageInstance[]>([]);
 
-  useEffect(() => {
-    console.log("Messages changed:", messages);
-  }, [messages]);
+  // useEffect(() => {
+  //   console.log("Messages changed:", messages);
+  // }, [messages]);
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectSocketRef = useRef(true);
@@ -125,29 +125,39 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         const message = formatIncomingMessage(parsedData);
 
         if (message.event === "on_chain_start") {
+          console.log("on_chain_start");
+          console.log(message.role);
+          console.log(message.message);
           addNewMessage(message);
         }
 
         if (message.event === "on_chat_model_stream") {
-          // console.log("on_chat_model_stream");
-          // console.log(messages);
+          console.log("on_chat_model_stream");
+          console.log(message.role);
+          console.log(message.message);
           // console.log(message);
           buildOnLastMessage(message);
         }
 
         if (message.event === "on_chat_model_end") {
+          console.log("on_chat_model_end");
+          console.log(message.role);
           setTokenCountPerMessage(message);
         }
 
         if (message.event === "on_query_stream") {
           console.log("on_query_stream");
+          console.log(message.role);
+          console.log(message.message);
           // console.log(messages);
           // console.log(message);
           addToLastMessage(message);
         }
 
         if (message.event === "on_chain_end") {
-          // console.log("on_chain_end");
+          console.log("on_chain_end");
+          console.log(message.role);
+          console.log(message.message);
           // console.log(messages);
           // console.log(message);
           finishLastMessage(message);
@@ -221,12 +231,19 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   };
 
   const addNewMessage = (message: MessageInstance) => {
-    const newMessage = {
-      ...message,
-      time: message.time || "0",
-    };
-  
-    setMessages((prevMessages) => [...prevMessages, newMessage]);
+    // build on last message if message.role is same as last message
+    if (messages.length > 0 && message.role === messages[messages.length - 1].role) {
+      buildOnLastMessage(message);
+    } else {
+
+      const newMessage = {
+        ...message,
+        time: message.time || "0",
+      };
+    
+      setMessages((prevMessages) => [...prevMessages, newMessage]);
+      
+    }
   };
   
 

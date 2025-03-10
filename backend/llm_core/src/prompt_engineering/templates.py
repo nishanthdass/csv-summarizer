@@ -144,22 +144,35 @@ SQLAGENTMULTIAGENTPROMPTTEMPLATE = f"""
 
 
 SQLAGENTPROMPTTEMPLATE = f"""
-            Your task is to write two new queries. One query will help answer the user's question and the other will help visualize the result. 
-            Important: Make sure to address the specfic question when writing the queries and looking through all available columns for filtering.
-            
-            1   The **answer query** should answer the user's question. Place the query in the 'answer_query' field.
-                -   Consider when filtering by order that some values in the table can be null.
+            First read the user's question and assess if the question is a Modify Data Query (e.g., Insert, Update, Delete, Merge), Modify Database Query (e.g., Create, Alter, Drop, Truncate, Rename), Retrieve Query (e.g., Select, Describe, Explain), Managing Transaction Query (e.g., Begin, Commit, Rollback, Savepoint) or Permissions Control Query (e.g., Grant, Revoke).
+            Important: Make sure to address the specfic question when writing the queries and looking through all available columns for filtering. 
+            Important: If you have tested different queries to answer the question and they all return empty result, then let the user know the problem and ask them for clarification. Set next_agent to human_input and wait for the user to respond. Stop executing any processes if this condition is met.
+            Important: If the user's question will yield a large number of results, then avoid using the SQL LIMIT clause and avoid running query for testing. Simply check if the table has the necessary columns and rows that make up the answer.
 
-            2 The **visualization query** should help visualize the answer. 
-                -   Ctids should be included in the visualization query
-                -   The visualization query should try to be specific to the rows that make up the answer
-                -   The SQL LIMIT clause should not be used unless it is relevant to answering the question more accurately.
-                -   Include all non-aggregated columns in the GROUP BY clause to avoid grouping errors.
-                -   Identify the most relevant columns, and choose to select the whole row (via single ctid) or the most relevant columns (ctid plus relevant columns). 
-                    - For example if a users question involves selecting or viewing a home and the table is about home(including costs, location, etc.), then the visualization query should select the whole row (SELECT ctid, *). 
-                    - If the question is regarding the cost of a home, then the visualization query should select the ctid and the cost column (SELECT ctid, cost).
-                    - In most cases, the visualization query should select the whole row (SELECT ctid, *).
-                -   Not all answers can be visualized. For example, if the user's question is "What is the average value of all items", then the visualization query should be "Select the value of all items". However if the user's question is "What is the average value of item A", then the visualization query should be "Select the value of item A".
+            If the question is Retrieve Query, then:
+                Your task is to write two new queries. One query will help answer the user's question and the other will help visualize the result. 
 
-            3 Label the query based on its purpose (max 7 words), such as 'Select all cars', 'Select running totals', etc.
+                    1   The **answer query** should answer the user's question. Make sure to test a few queries and study the data in the table so help the user finalize a query that returns a non-empty result. Place the final query in the 'answer_retrieval_query' field.
+                        -   Consider when filtering by order that some values in the table can be null.
+                        -   If the queries only returns a empty result, then place the failed query in the 'answer_retrieval_query' field and set `next_agent` to `human_input`.
+                        -   Additionally, if a query fails, the agent must include all relevant information in the answer field: the failed query (verbatim), an explanation of why it failed, suggestions for an alternative query based on the insights gained, and then wait for the user's response.
+
+                    2 The **visualization query** should help visualize the answer.
+                        -   If the answer query returns empty results, then leave the visualization query blank.
+                        -   Ctids should be included in the visualization query
+                        -   The visualization query should try to be specific to the rows that make up the answer
+                        -   The SQL LIMIT clause should not be used unless it is relevant to answering the question more accurately.
+                        -   Include all non-aggregated columns in the GROUP BY clause to avoid grouping errors.
+                        -   Identify the most relevant columns, and choose to select the whole row (via single ctid) or the most relevant columns (ctid plus relevant columns). 
+                            - For example if a users question involves selecting or viewing a home and the table is about home(including costs, location, etc.), then the visualization query should select the whole row (SELECT ctid, *). 
+                            - If the question is regarding the cost of a home, then the visualization query should select the ctid and the cost column (SELECT ctid, cost).
+                            - In most cases, the visualization query should select the whole row (SELECT ctid, *).
+                        -   Not all answers can be visualized. For example, if the user's question is "What is the average value of all items", then the visualization query should be "Select the value of all items". However if the user's question is "What is the average value of item A", then the visualization query should be "Select the value of item A".
+
+                    3 Label the query based on its purpose (max 7 words), such as 'Select all cars', 'Select running totals', etc.
+                        -   If the answer query returns empty results, then leave the visualization query blank.
+
+            If the question is Modify Data Query or Modify Database Query then:
+                You do not need to run the query to alter the database, but you can run queries to look at the database before writing the final query. You are given the user's question and the database schema.
+                Make sure to query the database to understand the relevent data before adding new data to the database. Try to make the query general enough to be able to answer any question about the table.
         """

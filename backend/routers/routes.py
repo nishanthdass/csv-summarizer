@@ -5,9 +5,8 @@ from config import LoadPostgresConfig
 from models.models import TableNameRequest, PdfNameRequest, MessageInstance
 from db.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data, run_query
 from services.tasks import get_task, delete_task_table
-from llm_core.langgraph_multiagent import run_chatbots, active_websockets, tasks, manager
+from llm_core.langgraph_multiagent import run_chatbots, active_websockets, tasks, manager, message_queue
 from llm_core.src.utils.chatbot_manager import start_chatbot, alter_table_name, alter_pdf_name
-from llm_core.src.llm.input_layer import message_queue
 from rich import print as rprint
 import os
 import re
@@ -198,7 +197,6 @@ async def set_pdf(pdf_name: PdfNameRequest, request: Request):
 async def get_pdf(pdf_name: str, request: Request):
     try: 
         session = await verify_session(request)
-        print(f"chat_server for session: {session}")
     except Exception as e:
         print(f"Unexpected error in WebSocket endpoint: {e}")
 
@@ -249,10 +247,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
         if session['name'] not in active_websockets:
             active_websockets[session['name']] = websocket
-            print(f"WebSocket endpoint for session: {session}")
 
         while True:
-            print("Waiting for message in WebSocket: ", session)
             data = await websocket.receive_json()  # Only use 'websocket'
             message = MessageInstance(**data)
             await message_queue.put(message)
@@ -269,7 +265,6 @@ async def websocket_endpoint(websocket: WebSocket):
 async def chat_server(request: Request):
     try: 
         session = await verify_session(request)
-        print(f"chat_server for session: {session}")
     except Exception as e:
         print(f"Unexpected error in WebSocket endpoint: {e}")
 
@@ -278,8 +273,8 @@ async def chat_server(request: Request):
             return {"message": "No active websockets for session: " + session['name']}
         
         if not tasks.get(session['name']):
-            print("No chat-server task exists for session: ", session)
             await start_chatbot(session['name'], manager)
+            rprint("chat-server task created for session: ", session)
             task = asyncio.create_task(run_chatbots(session['name']))
             tasks[session['name']] = task
         else:
@@ -297,16 +292,12 @@ async def chat_server(request: Request):
 async def sql_query(request: Request):
     try: 
         session = await verify_session(request)
-        rprint(f"chat_server for session: {session}")
     except Exception as e:
-        rprint(f"Unexpected error in WebSocket endpoint: {e}")
         raise HTTPException(status_code=401, detail="Invalid session")
 
     try:
         body = await request.json()
-        rprint("body: ", body)
         result = run_query(body['table_name'], body['query'], body['role'])
-        rprint("result: ", result)
         return JSONResponse(content={"success": True, "data": result})
 
     except Exception as e:
@@ -317,6 +308,5 @@ async def sql_query(request: Request):
 
 async def verify_session(request: Request):
     if "user_data" not in request.session:
-        print("Invalid session: ", request.session)
         raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid session")
     return request.session["user_data"]

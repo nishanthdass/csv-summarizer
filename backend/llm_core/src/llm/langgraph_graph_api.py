@@ -31,3 +31,18 @@ workflow.set_finish_point("data_analyst")
 
 workflow.add_conditional_edges("supervisor", lambda state: state["next_agent"])
 workflow.add_conditional_edges("data_analyst", lambda state: state["next_agent"])
+
+
+# --- Build the SQL State Graph ---
+workflow_sql = StateGraph(state_schema=MessageState)
+
+# Nodes
+workflow_sql.add_node("sql_agent", sql_agent_node)
+workflow_sql.add_node("human_input", human_input)
+
+# Edges
+workflow_sql.add_edge(START, "sql_agent")
+workflow_sql.add_edge("sql_agent", END)
+workflow_sql.add_edge("human_input", "sql_agent")
+# workflow_sql.add_conditional_edges("sql_agent", lambda state: state["next_agent"])
+# workflow_sql.add_conditional_edges("human_input", lambda state: state["next_agent"])

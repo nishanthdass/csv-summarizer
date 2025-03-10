@@ -3,6 +3,9 @@ from typing import Dict, List
 from db.db_utility import get_all_columns_and_types
 import uuid
 from rich import print as rprint
+import asyncio
+
+message_queue = asyncio.Queue()
 
 class ChatbotManager:
     def __init__(self):
@@ -20,6 +23,7 @@ class ChatbotManager:
             "language": language,
             "messages": [],
             "config": config,
+            "configs": {},
             "table_name": None,
             "pdf_name": None,
             "columns_and_types": None
@@ -28,16 +32,22 @@ class ChatbotManager:
 
     async def alter_table_name(self, session: str, table_name: str):
         try:
-            rprint("Table name: ", table_name)
-            rprint("Session: ", session)
-            rprint("Chatbot session: ",  self.chatbots[session])
             self.chatbots[session]["table_name"] = table_name
-            rprint("Table name set for session: ", session)
             self.chatbots[session]["columns_and_types"] = get_all_columns_and_types(table_name)
-            rprint("Columns and types set for session: ", session)
         
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace Table name for session {session}: {e}")
+        
+        try:
+            thread_id = self.chatbots[session]["config"]["configurable"]["thread_id"]
+            if thread_id not in self.chatbots[session]["configs"]:
+                self.chatbots[session]["configs"][thread_id] = {}
+                self.chatbots[session]["configs"][thread_id][table_name] = None
+            elif table_name not in self.chatbots[session]["configs"][thread_id]:
+                self.chatbots[session]["configs"][thread_id][table_name] = None
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to add or replace Table config for session {session}: {e}")
         
 
     async def alter_pdf_name(self, session: str, pdf_name: str):
@@ -46,6 +56,17 @@ class ChatbotManager:
         
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace PDF name for session {session}: {e}")
+        
+        try:
+            thread_id = self.chatbots[session]["config"]["configurable"]["thread_id"]
+            if thread_id not in self.chatbots[session]["configs"]:
+                self.chatbots[session]["configs"][thread_id] = {}
+                self.chatbots[session]["configs"][thread_id][pdf_name] = None
+            elif pdf_name not in self.chatbots[session]["configs"][thread_id]:
+                self.chatbots[session]["configs"][thread_id][pdf_name] = None
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to add or replace PDF config for session {session}: {e}")
 
 
     async def get_chatbot(self, session_id: str):
@@ -54,23 +75,20 @@ class ChatbotManager:
             raise ValueError(f"No chatbot found for session '{session_id}'.")
         return self.chatbots[session_id]
     
-    
     async def get_chatbot_table_name(self, session_id: str):
         if "table_name" not in self.chatbots[session_id]:
             return None
             
         return self.chatbots[session_id]["table_name"]
-    
+        
     async def get_chatbot_pdf_name(self, session_id: str):
         if "pdf_name" not in self.chatbots[session_id]:
             return None
-            
         return self.chatbots[session_id]["pdf_name"]
     
     async def get_chatbot_columns_and_types(self, session_id: str):
         if "columns_and_types" not in self.chatbots[session_id]:
             return 
-            
         return self.chatbots[session_id]["columns_and_types"]
     
     async def get_chatbot_config(self, session_id: str):
@@ -79,23 +97,31 @@ class ChatbotManager:
             
         return self.chatbots[session_id]["config"]
     
+    
+    async def get_table_config(self, session_id: str, table_name: str):
+        if table_name not in self.chatbots[session_id]["configs"]:
+            return None
+        return self.chatbots[session_id]["configs"][table_name]
+    
+    async def get_pdf_config(self, session_id: str, pdf_name: str):
+        if pdf_name not in self.chatbots[session_id]["configs"]:
+            return None
+        return self.chatbots[session_id]["configs"][pdf_name]
+    
+    async def get_combo_config(self, session_id: str, table_name: str, pdf_name: str):
+        if table_name not in self.chatbots[session_id]["configs"] or pdf_name not in self.chatbots[session_id]["configs"]:
+            return None
+        return self.chatbots[session_id]["configs"][table_name]
+
 
 async def start_chatbot(session: str, manager):
-    await manager.create_chatbot(session, "English")
+    if session not in manager.chatbots:
+        await manager.create_chatbot(session, "English")
 
 
 async def alter_table_name(session: str, table_name: str, manager):
     await manager.alter_table_name(session, table_name)
-    if await manager.get_chatbot_table_name(session) is not None and await manager.get_chatbot_pdf_name(session) is not None:
-        rprint("Both table name and pdf name are set for session: ", session)
-        
-    else:
-        rprint("Either table name or pdf name is not set for session: ", session)
 
 
 async def alter_pdf_name(session: str, pdf_name: str, manager):
     await manager.alter_pdf_name(session, pdf_name)
-    if await manager.get_chatbot_table_name(session) is not None and await manager.get_chatbot_pdf_name(session) is not None:
-        rprint("Both table name and pdf name are set for session: ", session)
-    else:
-        rprint("Either table name or pdf name is not set for session: ", session)

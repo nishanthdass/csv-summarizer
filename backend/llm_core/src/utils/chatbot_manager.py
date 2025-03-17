@@ -21,9 +21,8 @@ class ChatbotManager:
         config = {"configurable": {"thread_id": f"{thread_uuid}"}, "recursion_limit": 100}
         self.chatbots[session] = {
             "language": language,
-            "messages": [],
             "config": config,
-            "configs": {},
+            "messages": {},
             "table_name": None,
             "pdf_name": None,
             "columns_and_types": None
@@ -40,31 +39,35 @@ class ChatbotManager:
         
         try:
             thread_id = self.chatbots[session]["config"]["configurable"]["thread_id"]
-            if thread_id not in self.chatbots[session]["configs"]:
-                self.chatbots[session]["configs"][thread_id] = {}
-                self.chatbots[session]["configs"][thread_id][table_name] = None
-            elif table_name not in self.chatbots[session]["configs"][thread_id]:
-                self.chatbots[session]["configs"][thread_id][table_name] = None
+            if thread_id not in self.chatbots[session]["messages"]:
+                self.chatbots[session]["messages"][thread_id] = {}
+                self.chatbots[session]["messages"][thread_id][table_name] = None
+            elif table_name not in self.chatbots[session]["messages"][thread_id]:
+                self.chatbots[session]["messages"][thread_id][table_name] = None
 
+            rprint("Table Config: ", self.chatbots[session]["messages"])
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace Table config for session {session}: {e}")
         
 
     async def alter_pdf_name(self, session: str, pdf_name: str):
+
         try:
             self.chatbots[session]["pdf_name"] = pdf_name
+            rprint("PDF Name: ", self.chatbots[session]["pdf_name"])
         
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace PDF name for session {session}: {e}")
         
         try:
             thread_id = self.chatbots[session]["config"]["configurable"]["thread_id"]
-            if thread_id not in self.chatbots[session]["configs"]:
-                self.chatbots[session]["configs"][thread_id] = {}
-                self.chatbots[session]["configs"][thread_id][pdf_name] = None
-            elif pdf_name not in self.chatbots[session]["configs"][thread_id]:
-                self.chatbots[session]["configs"][thread_id][pdf_name] = None
-            
+            if thread_id not in self.chatbots[session]["messages"]:
+                self.chatbots[session]["messages"][thread_id] = {}
+                self.chatbots[session]["messages"][thread_id][pdf_name] = None
+            elif pdf_name not in self.chatbots[session]["messages"][thread_id]:
+                self.chatbots[session]["messages"][thread_id][pdf_name] = None
+        
+            rprint("PDF Config: ", self.chatbots[session]["messages"])
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace PDF config for session {session}: {e}")
 
@@ -99,19 +102,19 @@ class ChatbotManager:
     
     
     async def get_table_config(self, session_id: str, table_name: str):
-        if table_name not in self.chatbots[session_id]["configs"]:
+        if table_name not in self.chatbots[session_id]["messages"]:
             return None
-        return self.chatbots[session_id]["configs"][table_name]
+        return self.chatbots[session_id]["messages"][table_name]
     
     async def get_pdf_config(self, session_id: str, pdf_name: str):
-        if pdf_name not in self.chatbots[session_id]["configs"]:
+        if pdf_name not in self.chatbots[session_id]["messages"]:
             return None
-        return self.chatbots[session_id]["configs"][pdf_name]
+        return self.chatbots[session_id]["messages"][pdf_name]
     
     async def get_combo_config(self, session_id: str, table_name: str, pdf_name: str):
-        if table_name not in self.chatbots[session_id]["configs"] or pdf_name not in self.chatbots[session_id]["configs"]:
+        if table_name not in self.chatbots[session_id]["messages"] or pdf_name not in self.chatbots[session_id]["messages"]:
             return None
-        return self.chatbots[session_id]["configs"][table_name]
+        return self.chatbots[session_id]["messages"][table_name]
 
 
 async def start_chatbot(session: str, manager):

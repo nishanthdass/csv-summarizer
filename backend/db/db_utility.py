@@ -4,11 +4,12 @@ import re
 import os
 from config import LoadPostgresConfig
 from utils.pdf_processing_funct import process_pdf
-from  db.kg_utility import process_pdf_to_kg
+from  db.kg_utility import process_pdf_to_kg, process_csv_columns_to_kg
 from llm_core.src.utils.utility_function import get_embedding
 import shutil
 import pymupdf
 from rich import print as rprint
+import sys
 
 task_completion_status = {}
 db = LoadPostgresConfig()
@@ -47,7 +48,7 @@ def get_all_columns_and_types(table_name):
     return response
 
 
-def run_query(table_name: str, query: str, role: str):
+def run_query(table_name: str, query: str, role: str, query_type: str):
     conn = db.get_db_connection()
     cur = conn.cursor()
 
@@ -58,7 +59,7 @@ def run_query(table_name: str, query: str, role: str):
     
     filtered_llm_query_result = []
     # get all column names
-    if role == "sql_agent":
+    if query_type == "retrieval":
         cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}';")
         
         cur.execute(query)
@@ -72,7 +73,7 @@ def run_query(table_name: str, query: str, role: str):
             filtered_llm_query_result.append(row)
             
     
-    if role == "sql_manipulator_agent":
+    if query_type == "manipulation":
         cur.execute(query)
         conn.commit()
 
@@ -176,17 +177,18 @@ def ingest_csv_into_postgres(file: UploadFile):
 
     column_definitions = []
     clean_col_array = []
-    random_rows_text = []
+    rows_with_cols = {}
+
+    all_rows_obj = []
 
     df = pd.read_csv(file_location)
     columns = df.columns
     column_types = df.dtypes
 
-    # Get 5 random rows if there are more than 5 rows
-    if len(df) > 5:
-        random_rows = df.sample(5)
-    else:
-        random_rows = df.sample(len(df))
+
+    # Get all rows
+    all_rows = df.values.tolist()
+
 
     
 
@@ -196,8 +198,22 @@ def ingest_csv_into_postgres(file: UploadFile):
         column_definitions.append(f"{clean_col} {postgres_type}")
         clean_col_array.append([clean_col, postgres_type])
 
-    for i in range(len(clean_col_array)):
-        random_rows_text.append(clean_col_array[i][0] + ": " + str(random_rows.iloc[0][i]))
+
+    for i in range(len(all_rows)):
+        for j in range(len(all_rows[i])):
+            col_name = clean_col_array[j][0]
+            row_value = str(all_rows[i][j])
+            if col_name in rows_with_cols:
+                rows_with_cols[col_name].append(row_value)
+            else:
+                rows_with_cols[col_name] = [row_value]
+
+
+    #     for j in range(len(clean_col_array)):
+    #         rprint(clean_col_array[j])
+    rprint(rows_with_cols)
+
+    process_csv_columns_to_kg(clean_col_array, rows_with_cols, table_name)
 
     create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
     create_table_query += ", ".join(column_definitions) + ");"
@@ -223,26 +239,6 @@ def ingest_csv_into_postgres(file: UploadFile):
         conn.commit()
     except Exception as e:
         print(f"Error ingesting data into table {table_name}: {str(e)}")
-        conn.rollback()
-
-
-
-    create_embedding_table = f"""CREATE TABLE IF NOT EXISTS {table_name}_embedding (
-                id SERIAL PRIMARY KEY,
-                text TEXT,
-                embedding vector(3072)
-                );
-                """
-    try:
-        cur.execute(create_embedding_table)
-        conn.commit()
-
-        for line in random_rows_text:
-            embedding = get_embedding(str(line))
-            cur.execute(f"""INSERT INTO {table_name}_embedding (text, embedding) VALUES (%s, %s)""", (str(line), embedding))
-            conn.commit()
-    except Exception as e:
-        print(f"Error creating embedding table {table_name}_embedding: {str(e)}")
         conn.rollback()
     finally:
         cur.close()
@@ -342,6 +338,4 @@ def convert_postgres_to_react(columns_and_types):
         columns_and_types[i] = (column_name, react_type)
 
     return columns_and_types
-
-
 

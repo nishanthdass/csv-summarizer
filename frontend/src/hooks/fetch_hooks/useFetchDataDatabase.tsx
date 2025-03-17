@@ -102,13 +102,13 @@ export const useFetchDataDatabase = () => {
     }
   }, []);
 
-  const fetchRunSQLQuery = useCallback(async (message: string, table_name: string, role: string) => {
+  const fetchRunSQLQuery = useCallback(async (message: string, table_name: string, role: string, query_type: string) => {
     try {
       const response = await fetch('http://localhost:8000/sql-query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ query: message, table_name: table_name, role: role }),
+        body: JSON.stringify({ query: message, table_name: table_name, role: role, query_type: query_type }),
       });
       if (!response.ok) {
         throw new Error(`Error fetching SQL query: ${response.statusText}`);

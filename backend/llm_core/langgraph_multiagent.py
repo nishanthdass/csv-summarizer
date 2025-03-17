@@ -30,11 +30,11 @@ from langgraph.types import Command
 import logging
 from rich import print as rprint
 from config import LoadPostgresConfig
-from llm_core.src.llm.langgraph_graph_api import workflow, workflow_sql
+from llm_core.src.llm.langgraph_graph_api import workflow, workflow_sql, workflow_pdf, workflow_multi
 from llm_core.src.llm.agents import *
 from llm_core.src.utils.utility_function import *
 from llm_core.src.utils.chatbot_manager import ChatbotManager
-from llm_core.src.llm.input_layer import  set_chat_state, set_sql_chat_state
+from llm_core.src.llm.input_layer import  set_chat_state, set_sql_chat_state, set_pdf_chat_state
 from llm_core.src.llm.output_layer import start_next_agent_stream, char_agent_stream, end_agent_stream, usage_agent_stream, query_agent_stream
 from models.models import MessageInstance
 from llm_core.src.llm.function_layer import sql_agent_function
@@ -60,7 +60,7 @@ async def run_chatbots(session_id: str):
     chatbot = await manager.get_chatbot(session_id)
     config = chatbot["config"]
     thread_id = config['configurable']['thread_id']
-    chat_state = chatbot["configs"]
+    chat_state = chatbot["messages"]
     user_selected_component = None
     # table_name = chatbot["table_name"]
     # pdf_name = chatbot["pdf_name"]
@@ -83,11 +83,34 @@ async def run_chatbots(session_id: str):
                     state = chat_state[thread_id][message.table_name]
                     state["question"] = HumanMessage(content=message.message)
                     state["messages"].append(HumanMessage(content=message.message))
-
             
-            else:
+            elif message.pdf_name and not message.table_name:
+                user_selected_component = "pdf"
+                rprint("Running PDF Workflow: ", message.pdf_name)
+                # rprint("Running SQL Workflow: ", message.pdf_name)
+                # rprint("chat_state: ", chat_state[thread_id])
+                app = workflow_pdf.compile(checkpointer=memory)
+                if chat_state[thread_id][message.pdf_name] == None:
+                    state = await set_pdf_chat_state(manager, session_id, message)
+                    chat_state[thread_id][message.pdf_name] = state
+                    # rprint("Intializing pdf state: ", chat_state[thread_id])
+                else:
+                    state = chat_state[thread_id][message.pdf_name]
+                    state["question"] = HumanMessage(content=message.message)
+                    state["messages"].append(HumanMessage(content=message.message))
+            
+            elif message.table_name and message.pdf_name:
                 user_selected_component = "multi"
-                app = workflow.compile(checkpointer=memory)
+                app = workflow_multi.compile(checkpointer=memory)
+                if chat_state[thread_id][message.table_name] == None:
+                    state = await set_sql_chat_state(manager, session_id, message)
+                    chat_state[thread_id][message.table_name] = state
+                
+                if chat_state[thread_id][message.pdf_name] == None:
+                    state = await set_pdf_chat_state(manager, session_id, message)
+                    chat_state[thread_id][message.pdf_name] = state
+                
+                rprint("Running Multiagent Workflow: ", chat_state[thread_id])
                 state = await set_chat_state(manager, session_id, message)
             
             # if message.pdf_name and chat_state[thread_id][message.pdf_name] == None:
@@ -155,6 +178,7 @@ async def run_chatbots(session_id: str):
                         )
                         
                     if event["event"] == "on_chat_model_end":
+                        # rprint("on_chat_model_end: ", event)
                         if "run_id" in event:
                             # rprint("on_chat_model_end: ", event["run_id"], cur_agent)
                             tool_call_name = ""
@@ -195,7 +219,7 @@ async def run_chatbots(session_id: str):
                                 is_interrupted = True
                                 if is_interrupted and user_selected_component == "sql":
                                     rprint("Interrupted!")
-                                    rprint("Interrupts: ", interrupts)
+                                    # rprint("Interrupts: ", interrupts)
                                     # chat_state[thread_id][message.table_name]["agent_step"] = 3
                                 break
                     else:
@@ -224,6 +248,7 @@ async def handle_on_chat_model_end(event: dict,
     """
     Handle the 'on_chat_model_end' event
     """
+    # rprint("handle_on_chat_model_end: ", event)
     end_time = time.time()
     current_time = end_time - time_table.get(str(role), 0)
     message = await usage_agent_stream(manager, session_id, usage_metadata, role, current_time)
@@ -252,7 +277,7 @@ async def handle_on_chain_start(
             if cur_agent != next_agent and "has_function_call" not in input_data:
                 cur_agent = next_agent
                 if cur_agent != "__end__":
-                    rprint("Condition 1")
+                    # rprint("Condition 1")
                     start_time = (time_table[str(next_agent)])
                     # rprint("handle_on_chain_start: ", cur_agent, next_agent, thread_id)
                     holder_message = await start_next_agent_stream(manager, session_id, "", next_agent, start_time, thread_id)
@@ -262,41 +287,45 @@ async def handle_on_chain_start(
             
             if "has_function_call" in input_data:
                 role = input_data['current_agent']
+                query_type = input_data['query_type']
                 end_time = time.time()
                 # rprint("input_data: ", input_data)
                 if input_data["query_type"] == "retrieval":
                     finish_time = (end_time - time_table[str(role)])
-                    # rprint("Table: ", input_data['table_name'], "Query: ", input_data['answer_query'],"role: ", role)
+                    # rprint("Table: ", input_data['table_name'], "Query: ", input_data['answer_retrieval_query'],"role: ", role)
                     if input_data['query_failed'] is False:
-                        rprint("Condition 2")
-                        message_str = sql_agent_function(table_name=input_data['table_name'], query=input_data['answer_retrieval_query'], role=role)
+                        # rprint("Condition 2")
+                        message_str = sql_agent_function(table_name=input_data['table_name'], query=input_data['answer_retrieval_query'], role=role, query_type=query_type)
                         end_message = await query_agent_stream(manager, 
                                                                session_id, 
                                                                " <br><br> Query: " + input_data['answer_retrieval_query'] + "<br><br> Query Result: <br>" + message_str["Result"], 
                                                                role, 
                                                                finish_time, 
                                                                str(input_data['visualize_retrieval_query']), 
-                                                               str(input_data['visualize_retrieval_label']))
+                                                               str(input_data['visualize_retrieval_label']),
+                                                               str(query_type))
                         end_message = MessageInstance(**end_message)
                         # rprint("end_message handle_on_chain_start: ", end_message)
                         await safe_send(active_websockets, end_message, session_id)
                         time_table[str(role)] = 0
                     else:
-                        rprint("Condition 3")
+
                         end_message = await query_agent_stream(manager, 
                                                                session_id,
                                                                " <br><br> Query: " + str(input_data['answer_retrieval_query']), 
                                                                role, 
                                                                finish_time, 
                                                                None, 
-                                                               None)
+                                                               None,
+                                                               str(query_type))
                         end_message = MessageInstance(**end_message)
                         await safe_send(active_websockets, end_message, session_id)
                         time_table[str(role)] = 0
-                if input_data["query_type"] == "manipulate":
+                if input_data["query_type"] == "manipulation":
                     finish_time = (end_time - time_table[str(role)])
-                    end_message = await query_agent_stream(manager, session_id, input_data['answer_query'], role, finish_time, str(input_data['answer_query']), str(input_data['viewing_query_label']))
+                    end_message = await query_agent_stream(manager, session_id, " <br><br> Query: " + input_data['perform_manipulation_query'], role, finish_time, str(input_data['perform_manipulation_query']), str(input_data['perform_manipulation_label']), str(query_type))
                     end_message = MessageInstance(**end_message)
+                    # rprint("end_message handle_on_chain_start: ", end_message)
                     await safe_send(active_websockets, end_message, session_id)
     return cur_agent, next_agent
 

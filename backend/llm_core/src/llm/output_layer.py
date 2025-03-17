@@ -69,7 +69,7 @@ async def end_agent_stream(manager, session_id, message_str: str, role: str, tim
 
     return message
 
-async def query_agent_stream(manager, session_id, message_str: str, role: str, time: float, visualizing_query: str, viewing_query_label: str):
+async def query_agent_stream(manager, session_id, message_str: str, role: str, time: float, visualizing_query: str, viewing_query_label: str, query_type: str):
     time_int = int(time * 1000)
     float_time = float(time_int) / 1000
     message = {
@@ -80,7 +80,8 @@ async def query_agent_stream(manager, session_id, message_str: str, role: str, t
             "role": role,
             "time": float_time,
             "visualizing_query": visualizing_query,
-            "viewing_query_label": viewing_query_label
+            "viewing_query_label": viewing_query_label,
+            "query_type": query_type
             }
 
     return message

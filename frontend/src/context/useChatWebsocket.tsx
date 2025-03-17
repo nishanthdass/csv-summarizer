@@ -48,9 +48,9 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   const [ isChatOpen, setIsChatOpen ] = useState(false);
   const [ messages, setMessages ] = useState<MessageInstance[]>([]);
 
-  useEffect(() => {
-    console.log("Messages changed:", messages);
-  }, [messages]);
+  // useEffect(() => {
+  //   console.log("Messages changed:", messages);
+  // }, [messages]);
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectSocketRef = useRef(true);

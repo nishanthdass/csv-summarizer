@@ -290,6 +290,8 @@ async def chat_server(request: Request):
 
 @router.post("/sql-query")
 async def sql_query(request: Request):
+    rprint("sql-query")
+
     try: 
         session = await verify_session(request)
     except Exception as e:
@@ -297,7 +299,8 @@ async def sql_query(request: Request):
 
     try:
         body = await request.json()
-        result = run_query(body['table_name'], body['query'], body['role'])
+        rprint("body: ", body)
+        result = run_query(body['table_name'], body['query'], body['role'], body['query_type'])
         return JSONResponse(content={"success": True, "data": result})
 
     except Exception as e:

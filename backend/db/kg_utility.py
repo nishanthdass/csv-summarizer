@@ -16,6 +16,8 @@ VECTOR_NODE_LABEL = 'Line'
 VECTOR_SOURCE_PROPERTY = 'text'
 VECTOR_EMBEDDING_PROPERTY = 'textEmbedding'
 
+
+
 def return_any_chunk():
     cypher = """
     MATCH (anyChunk:Chunk) 
@@ -449,10 +451,11 @@ def add_column_as_node(column_array, table_name):
 def add_row_value_nodes(random_rows, table_name):
     """Add row value nodes with metadata"""
     node_count = 0
-    for key, value_list in random_rows.items():  # `value_list` is the list of values
-        rprint(key, value_list)
+
+    for key in random_rows.keys():
+        value_list = random_rows[key]
         for index, val in enumerate(value_list):  # Get both index and value
-            params = param_insert_csv_row_values(table_name, key, val, index)  # Pass index
+            params = param_insert_csv_row_values(table_name, key, val, index) 
             kg.query(merge_row_value_node_query, params=params)
             node_count += 1
     print(f"Created {node_count} nodes")
@@ -598,23 +601,23 @@ def process_csv_columns_to_kg(column_array, random_rows, file_name_minus_extensi
     # rprint("random_rows", random_rows)
     # rprint("file_name_minus_extension", file_name_minus_extension)
     rprint("Begin processing")
-    rprint(f"Processing {file_name_minus_extension}")
-    create_column_constraints()
-    rprint("Adding column nodes...")
-    add_column_as_node(column_array, file_name_minus_extension)
-    rprint("Creating column vector index...")
-    create_column_vector_index()
-    rprint("Creating column embeddings...")
-    create_column_embeddings()
-    rprint("Creating tablename node...")
-    create_tablename_from_column_nodes(file_name_minus_extension)
-    rprint("Connecting column nodes to table nodes...")
-    connect_column_to_table(file_name_minus_extension)
-    rprint("Create Row Value nodes...")
-    add_row_value_nodes(random_rows, file_name_minus_extension)
-    rprint("Creating row value vector index...")
-    create_row_value_vector_index()
-    rprint("Creating row value embeddings...")
-    create_row_value_embeddings()
-    rprint("Connecting row value nodes to column nodes...")
-    connect_row_value_to_column(file_name_minus_extension)
+    # rprint(f"Processing {file_name_minus_extension}")
+    # create_column_constraints()
+    # rprint("Adding column nodes...")
+    # add_column_as_node(column_array, file_name_minus_extension)
+    # rprint("Creating column vector index...")
+    # create_column_vector_index()
+    # rprint("Creating column embeddings...")
+    # create_column_embeddings()
+    # rprint("Creating tablename node...")
+    # create_tablename_from_column_nodes(file_name_minus_extension)
+    # rprint("Connecting column nodes to table nodes...")
+    # connect_column_to_table(file_name_minus_extension)
+    # rprint("Create Row Value nodes...")
+    # add_row_value_nodes(random_rows, file_name_minus_extension)
+    # rprint("Creating row value vector index...")
+    # create_row_value_vector_index()
+    # rprint("Creating row value embeddings...")
+    # create_row_value_embeddings()
+    # rprint("Connecting row value nodes to column nodes...")
+    # connect_row_value_to_column(file_name_minus_extension)

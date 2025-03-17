@@ -23,6 +23,7 @@ class MessageInstance(BaseModel):
     answer_retrieval_query: Optional[str] = None
     visualizing_query: Optional[str] = None
     viewing_query_label: Optional[str] = None
+    query_type: Optional[str] = None
     has_function_call: Optional[bool] = None
     
     
@@ -42,6 +43,7 @@ class MessageState(TypedDict):
     current_agent: str
     next_agent: str
     question: str
+    augmented_question: str
     answer: str
     table_name: str
     pdf_name: str
@@ -51,6 +53,7 @@ class MessageState(TypedDict):
     answer_retrieval_query: str
     visualizing_query: str
     viewing_query_label: str
+    query_type: str
     is_multiagent: bool
     agent_step: int
     runtime_queries: str

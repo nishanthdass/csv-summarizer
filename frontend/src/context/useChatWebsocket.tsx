@@ -22,6 +22,7 @@ interface MessageInstance {
   answer_query?: string | null;
   visualizing_query?: string | null;
   viewing_query_label?: string | null;
+  query_type?: string | null;
 }
 
 interface ChatWebsocketContextValue {
@@ -47,9 +48,9 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   const [ isChatOpen, setIsChatOpen ] = useState(false);
   const [ messages, setMessages ] = useState<MessageInstance[]>([]);
 
-  // useEffect(() => {
-  //   console.log("Messages changed:", messages);
-  // }, [messages]);
+  useEffect(() => {
+    console.log("Messages changed:", messages);
+  }, [messages]);
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectSocketRef = useRef(true);
@@ -89,6 +90,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       answer_query: convertStringNullToNull(data.answer_query),
       visualizing_query: convertStringNullToNull(data.visualizing_query),
       viewing_query_label: convertStringNullToNull(data.viewing_query_label),
+      query_type: convertStringNullToNull(data.query_type)
     };
   
     return message;
@@ -125,41 +127,29 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         const message = formatIncomingMessage(parsedData);
 
         if (message.event === "on_chain_start") {
-          console.log("on_chain_start");
-          console.log(message.role);
-          console.log(message.message);
+          // console.log("on_chain_start, message: ", message.message);
           addNewMessage(message);
         }
 
         if (message.event === "on_chat_model_stream") {
-          console.log("on_chat_model_stream");
-          console.log(message.role);
-          console.log(message.message);
-          // console.log(message);
+          // console.log("on_chat_model_stream, message: ", message.message, message.role);
+          // if last message role is same as current message role, build on last message
+
           buildOnLastMessage(message);
         }
 
         if (message.event === "on_chat_model_end") {
-          console.log("on_chat_model_end");
-          console.log(message.role);
+          // console.log("on_chat_model_end, message: ", message);
           setTokenCountPerMessage(message);
         }
 
         if (message.event === "on_query_stream") {
-          console.log("on_query_stream");
-          console.log(message.role);
-          console.log(message.message);
-          // console.log(messages);
-          // console.log(message);
+          // console.log("on_query_stream, message: ", message.message);
           addToLastMessage(message);
         }
 
         if (message.event === "on_chain_end") {
-          console.log("on_chain_end");
-          console.log(message.role);
-          console.log(message.message);
-          // console.log(messages);
-          // console.log(message);
+          // console.log("on_chain_end, message: ", messages);
           finishLastMessage(message);
         }
         
@@ -255,11 +245,23 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       }
       const updatedMessages = [...prevMessages];
       const lastMessage = updatedMessages[updatedMessages.length - 1];
-      updatedMessages[updatedMessages.length - 1] = {
-        ...lastMessage,
-        message: deltaMessage.message,
-        time: deltaMessage.time
-      };
+      // console.log("lastMessage: ", lastMessage);
+
+      if (lastMessage.message.endsWith("\n")) {
+        // start a new message
+        updatedMessages.push({
+          ...lastMessage,
+          ...deltaMessage
+        })
+      } else {
+        updatedMessages[updatedMessages.length - 1] = {
+          ...lastMessage,
+          message: deltaMessage.message,
+          time: deltaMessage.time,
+          event: deltaMessage.event
+        };
+
+      }
   
       return updatedMessages;
     });
@@ -276,9 +278,11 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       updatedMessages[updatedMessages.length - 1] = {
         ...lastMessage,
         message: lastMessage.message + deltaMessage.message,
+        event: deltaMessage.event,
         time: deltaMessage.time,
         visualizing_query: deltaMessage.visualizing_query,
-        viewing_query_label: deltaMessage.viewing_query_label
+        viewing_query_label: deltaMessage.viewing_query_label,
+        query_type: deltaMessage.query_type
       };
   
       return updatedMessages;
@@ -286,6 +290,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
   }
 
   const finishLastMessage = (message: MessageInstance) => {
+    console.log("finishLastMessage: ", message);
     setMessages((prevMessages) => {
       if (prevMessages.length === 0) {
         console.warn("No messages to update.");
@@ -299,7 +304,8 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
         message: message.message,
         time: message.time,
         visualizing_query: message.visualizing_query,
-        viewing_query_label: message.viewing_query_label
+        viewing_query_label: message.viewing_query_label,
+        query_type: message.query_type
       };
   
       return updatedMessages;
@@ -320,9 +326,11 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       const newTokens = incomingMessage.token_object || [];
   
       const mergedTokenObject = [...existingTokens, ...newTokens];
-  
+
+      // add new line
       updatedMessages[lastIndex] = {
         ...lastMessage,
+        message: lastMessage.message + "\n", // Add newline here
         token_object: mergedTokenObject,
       };
   

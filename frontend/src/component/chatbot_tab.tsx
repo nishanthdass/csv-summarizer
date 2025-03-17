@@ -13,7 +13,7 @@ const ChatbotTab = () => {
 
 const { handleSqlQuerySelections } = useTableSelection();
 const { loadTableFromDatabase} = useFileSidePanelOperations();
-const { currentTable } = useDataContext();
+const { currentTable, currentPdf } = useDataContext();
 
 const { fetchRunSQLQuery } = useFetchDataDatabase();
 const { tasks } = useTasks();
@@ -22,6 +22,24 @@ const { isConnected, sendMessage, messages } = useChatWebSocket();
 const [input, setInput] = useState('');
 const [animatedDots, setAnimatedDots] = useState('');
 const [collapsedStates, setCollapsedStates] = useState<Record<number, boolean>>({});
+
+
+const groupedMessages = messages.reduce((acc, message) => {
+    const lastGroup = acc[acc.length - 1];
+
+    if (lastGroup && lastGroup.role === message.role) {
+        // Append message to the last group
+        lastGroup.messages.push(message.message);
+        lastGroup.token_objects = lastGroup.token_objects.concat(message.token_object || []);
+    } else {
+        // Create a new group
+        acc.push({ role: message.role, messages: [message.message], token_objects: message.token_object || [] });
+    }
+
+    return acc;
+}, [] as { role: string; messages: string[]; token_objects: any[] }[]);
+
+
 
 const tasksForCurrentTable = tasks.filter(
     (task) => task.name === currentTable?.name
@@ -39,12 +57,14 @@ useEffect(() => {
         const message = messages[messages.length - 1]
         scrollToBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
+    // console.log("Last message changed:", messages[messages.length - 1]);
 }, [messages]);
 
-const handleClickSql = async(message: string, table_name: string, role: string) => {
+const handleClickSql = async(message: string, table_name: string, role: string, query_type: string) => {
     if (isConnected) {
+        console.log("Click SQL: ", message);
         try {
-            const response = await fetchRunSQLQuery(message, table_name, role);
+            const response = await fetchRunSQLQuery(message, table_name, role, query_type);
             loadTableFromDatabase(table_name);
             handleSqlQuerySelections?.(response.data);
         } catch (error) {
@@ -57,7 +77,7 @@ const handleClickSql = async(message: string, table_name: string, role: string) 
 const handleSend = () => {
     if (isConnected) {
         animate_dot();
-        sendMessage(currentTable?.name || '', '',input);
+        sendMessage(currentTable?.name || '', currentPdf?.name || '',input);
         setInput('');
     }
 };
@@ -84,113 +104,47 @@ return (
             <strong>Status:</strong> {isConnected ? "Connected" : "Disconnected"}
         </div>
         <div className="chat-messages">
-            
-            {messages.map((message, index) =>
-
-                typeof message.visualizing_query === 'string' && message.visualizing_query.length > 0  ? (
-                    <span key={index} className={`message-line ${message.role}`}>
-                    <strong>{message.role}:</strong>
-                    
-                    {message.message === "" ? (
-                        animatedDots
-                    ) : (
-                    <span dangerouslySetInnerHTML={{ __html: message.message }} />
-                    )}
-                    
-                    <p>
-                    <button className="sql-query-button" onClick={() => message.visualizing_query && handleClickSql(message.visualizing_query, message.table_name, message.role)}>{message.viewing_query_label}</button>
-                    </p>
-                    
-                    {message.role !== "User" && message.token_object && message.token_object.length > 0 && (
-                    <>
-                    <br/>
-                    <br/>
-                    <table className="token-table">
-                        <thead>
-                        <tr>
-                            <th>Run ID</th>
-                            <th>Model Name</th>
-                            <th>Tool call</th>
-                            <th>Input Tokens</th>
-                            <th>Output Tokens</th>
-                            <th>Total Tokens</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {message.token_object.map((token, i) => (
-                            <tr key={i}>
-                            <td>{token.run_id || "N/A"}</td>
-                            <td>{token.model_name}</td>
-                            <td>{token.tool_call_name}</td>
-                            <td>{token.input_tokens}</td>
-                            <td>{token.output_tokens}</td>
-                            <td>{token.total_tokens}</td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                    </>
-                    )}
-                    <div className='chat-info'>
-                    {message.role !== "User" && (
-                        <>
-                        <br/>
-                        <div className='chat-thread-id'>Thread ID: {String(message.thread_id)}</div>
-                        <div className='chat-time'>Response time: {String(message.time)} seconds</div>
-                        </>
-                        )}
-                    </div>
-                    </span>
-                ) : (
-                <span key={index} className={`message-line ${message.role}`} >
-                <strong>{message.role}:</strong>
-                
-                {message.message === "" ? 
-                    animatedDots : <span dangerouslySetInnerHTML={{ __html: message.message }} />}
-            
-                {message.role !== "User" && message.token_object && message.token_object.length > 0 && (
-                    <>
-                    <br/>
-                    <br/>
-                    <table className="token-table">
-                        <thead>
-                        <tr>
-                            <th>Run ID</th>
-                            <th>Model Name</th>
-                            <th>Tool call</th>
-                            <th>Input Tokens</th>
-                            <th>Output Tokens</th>
-                            <th>Total Tokens</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {message.token_object.map((token, i) => (
-                            <tr key={i}>
-                            <td>{token.run_id || "N/A"}</td>
-                            <td>{token.model_name}</td>
-                            <td>{token.tool_call_name}</td>
-                            <td>{token.input_tokens}</td>
-                            <td>{token.output_tokens}</td>
-                            <td>{token.total_tokens}</td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                    </>
-                    )}
-                <div className='chat-info'>
-                <br/>
-                {message.role !== "User" && (
-                    <>
-                    <div className='chat-thread-id'>Thread ID: {String(message.thread_id)}</div>
-                    <div className='chat-time'>Response time: {String(message.time)} seconds</div>
-                    </>
-                    )}
+        {groupedMessages.map((group, index) => (
+            <div key={index} className={`message-line ${group.role}`}>
+                <strong>{group.role}:</strong>
+                <div>
+                    {group.messages.map((msg, i) => (
+                        <p key={i} dangerouslySetInnerHTML={{ __html: msg }} />
+                    ))}
                 </div>
-                </span>
-                )
-            )}
-            <div ref={scrollToBottomRef}></div>
+
+                {group.role !== "User" && group.token_objects.length > 0 && (
+                    <>
+                        <br />
+                        <br />
+                        <table className="token-table">
+                            <thead>
+                                <tr>
+                                    <th>Run ID</th>
+                                    <th>Model Name</th>
+                                    <th>Tool call</th>
+                                    <th>Input Tokens</th>
+                                    <th>Output Tokens</th>
+                                    <th>Total Tokens</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {group.token_objects.map((token, i) => (
+                                    <tr key={i}>
+                                        <td>{token.run_id || "N/A"}</td>
+                                        <td>{token.model_name}</td>
+                                        <td>{token.tool_call_name}</td>
+                                        <td>{token.input_tokens}</td>
+                                        <td>{token.output_tokens}</td>
+                                        <td>{token.total_tokens}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </>
+                )}
+            </div>
+        ))}
         </div>
         </>
     )}

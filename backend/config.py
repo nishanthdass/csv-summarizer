@@ -57,3 +57,12 @@ class LoadNeo4jConfig:
         return Neo4jGraph(
             url=self.neo4j_uri, username=self.neo4j_user, password=self.neo4j_password, database=self.neo4j_db
         )
+    
+    def get_uri(self):
+        return self.neo4j_uri
+    
+    def get_user(self):
+        return self.neo4j_user
+    
+    def get_password(self):
+        return self.neo4j_password

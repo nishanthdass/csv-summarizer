@@ -29,15 +29,26 @@ const groupedMessages = messages.reduce((acc, message) => {
 
     if (lastGroup && lastGroup.role === message.role) {
         // Append message to the last group
+        lastGroup.table_name = message.table_name || lastGroup.table_name;
         lastGroup.messages.push(message.message);
         lastGroup.token_objects = lastGroup.token_objects.concat(message.token_object || []);
+        lastGroup.visualizing_query = message.visualizing_query || lastGroup.visualizing_query;
+        lastGroup.viewing_query_label = message.viewing_query_label || lastGroup.viewing_query_label;
+        lastGroup.query_type = message.query_type || lastGroup.query_type;
     } else {
         // Create a new group
-        acc.push({ role: message.role, messages: [message.message], token_objects: message.token_object || [] });
+        acc.push({ role: message.role,
+            table_name: message.table_name,
+            messages: [message.message], 
+            token_objects: message.token_object || [], 
+            visualizing_query : message.visualizing_query || "", 
+            viewing_query_label: message.viewing_query_label || "", 
+            query_type: message.query_type || "" });
+        
     }
 
     return acc;
-}, [] as { role: string; messages: string[]; token_objects: any[] }[]);
+}, [] as { role: string; table_name: string; messages: string[]; token_objects: any[]; visualizing_query: string; viewing_query_label: string; query_type: string }[]);
 
 
 
@@ -107,12 +118,21 @@ return (
         {groupedMessages.map((group, index) => (
             <div key={index} className={`message-line ${group.role}`}>
                 <strong>{group.role}:</strong>
-                <div>
-                    {group.messages.map((msg, i) => (
-                        <p key={i} dangerouslySetInnerHTML={{ __html: msg }} />
-                    ))}
-                </div>
-
+                
+                <>
+                {group.messages.map((msg, i) => (
+                    <p key={i}>
+                        {msg.trim() === "" && i === group.messages.length - 1 ? animatedDots : <span dangerouslySetInnerHTML={{ __html: msg }} />}
+                    </p>
+                ))}
+                </>
+                <>
+                {group.viewing_query_label && group.viewing_query_label !== "" && (
+                    <button className="sql-query-button" onClick={() => group.visualizing_query && group.query_type && handleClickSql(group.visualizing_query, group.table_name, group.role, group.query_type)}>{group.viewing_query_label}</button>
+                
+                )}
+                </>
+                
                 {group.role !== "User" && group.token_objects.length > 0 && (
                     <>
                         <br />

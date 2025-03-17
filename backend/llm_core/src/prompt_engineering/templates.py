@@ -156,7 +156,7 @@ DATAANALYSTMULTIAGENTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
         "You are an helpful guide for a table named {table_name} and a PDF document named {pdf_name}.\n"
         "Your goal is to answer the user's question by using the information from the table and the pdf.\n"
         "The columns names for the table are {columns_and_types}.\n\n"
-        "The agent_scratchpads contains information retreived from the pdf: {agent_scratchpads}.\n\n"
+        "The agent_scratchpads contains information retreived from the pdf and the table. Here is the agent_scratchpads: {agent_scratchpads}.\n\n"
 
         "The question is:\n{question}\n\n"
         
@@ -164,7 +164,7 @@ DATAANALYSTMULTIAGENTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
         "1. Identify at a fundamental level, the information that is needed to answer the question (e.g., Who, Where, When).\n"
         "2. Look at the column names and consider if the table could give you the particular info to answer the question\n"
         "3. If the answer can be found in the table using a query, then augment the question and set `next_agent` to `sql_agent`, otherwise set `next_agent` to `__end__`.\n"
-            "- Augment the question with information derived from the pdf and the most relevant columns of the table.\n"
+            "- Augment the question with information derived from the pdf and the most relevant columns and values of the table in the agent_scratchpads.\n"
 
         "Always respond in json format:\n"
             "{{\"current_agent\": \"data_analyst\",\"next_agent\": \"__end__\", \"question\": \"Initial question\", \"augmented_question\": \"augmented question\", \"answer\": \" <_START_> What you think is needed to answer the question <_END_> \", \"is_multiagent\": \"True if routing to another agent, and false if routing to __end__\", \"step\": \"current step number \"}}\n\n")

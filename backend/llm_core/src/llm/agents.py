@@ -356,19 +356,28 @@ async def data_analyst_node(state: MessageState) -> MessageState:
     data_points = pdf_retrieval_answer["data_points"]
     # # rprint("data_points: ", data_points)
     similar_rows = process_string_return_similarity(data_points, table_name)
-    # rprint("similar_rows: ", similar_rows)
+    rprint("similar_rows: ", similar_rows)
+    similar_rows_str = ""
+    for row in similar_rows[:5]:
+        similar_rows_str += "Column Name: " + str(row['columnName']) + ": " + str(row['value']) + ", "
+
+    
+
+
     best_line = pdf_retrieval_source_content.metadata["lineNumber"]
     page_number = pdf_retrieval_source_content.metadata["pageNumber"]
     additional_lines = pdf_retrieval_source_content.metadata["additionalLines"]
     # rprint("Additional_Lines: ", str(additional_lines))
 
-    agent_note = answer + "Below is what i found from page number :" + str(page_number) + " take a look around line number: "  + str(best_line) + ". " + "The most relevant data points are: " + str(data_points)
+    agent_note = answer +  "The most relevant data points are: " + str(data_points)
     
-    for lines in additional_lines:
-        line = "Line Number: " + str(lines["lineNumber"]) + "Text: " + str(lines["text"])
-        agent_note += line
+    # for lines in additional_lines:
+    #     line = "Line Number: " + str(lines["lineNumber"]) + "Text: " + str(lines["text"])
+    #     agent_note += line
 
-    # agent_note = 'Find a good restaurant near NY Aquarium, located at 602 Surf Avenue, Brooklyn, New York 11224, by looking for restaurants in the surrounding area of Coney Island, Brooklyn, especially along Surf Avenue. Consider restaurants with high ratings and a significant number of reviews.'
+    agent_note += ". The most similar rows from the table are: " + str(similar_rows_str) + ". "
+
+    rprint("agent_note: ", agent_note)
 
     agent_scratchpad = AIMessage(content=agent_note)
 
@@ -385,6 +394,8 @@ async def data_analyst_node(state: MessageState) -> MessageState:
     model = "gpt-4o"
 
     parsed_result = await json_parser_prompt_chain(DATAANALYSTMULTIAGENTPROMPTTEMPLATE, model, inputs)
+
+    rprint("parsed_result: ", parsed_result)
 
     if parsed_result["next_agent"] == "human_input":
         rprint("Interupt in Data Analyst Node")

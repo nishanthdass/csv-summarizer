@@ -31,8 +31,9 @@ def build_column_retrieval_query(table_name):
             n, 
             vector.similarity.cosine(queryVector, n.rowValueEmbedding) AS similarity
         ORDER BY similarity DESC
-        LIMIT 5;
+        LIMIT 10;
         """
+
 
 def create_array_from_string(input_string: str):
     array_to_process = []
@@ -47,8 +48,8 @@ def find_word_in_db(word: str):
     conn = db.get_db_connection()
     cur = conn.cursor()
 
-    # Check if the word exists in the english_dict_openai_large table
-    cur.execute("SELECT word FROM english_dict_openai_large WHERE word = %s", (word,))
+    # Check if the word exists in the english_dict_openai_small table
+    cur.execute("SELECT word FROM english_dict_openai_small WHERE word = %s", (word,))
     word_exists = cur.fetchone()
 
     cur.close()
@@ -59,16 +60,16 @@ def find_word_in_db(word: str):
     else:
         return True
 
-def insert_word_to_db(word: str):
+def insert_word_embedding_to_db(word: str, embedding: str):
     try:
         conn = db.get_db_connection()
         cur = conn.cursor()
 
         # Create embedding for the word
-        embedding = create_embedding_for_word(word)
+        # embedding = create_embedding_for_word(word)
 
         cur.execute(
-            "INSERT INTO english_dict_openai_large (word, embedding) VALUES (%s, %s)",
+            "INSERT INTO english_dict_openai_small (word, embedding) VALUES (%s, %s)",
             (word, embedding)  # Pass values as a tuple
         )
         conn.commit()
@@ -79,16 +80,15 @@ def insert_word_to_db(word: str):
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
 
-def create_embedding_for_word(word: str):
+def create_embedding_for_words(words: list):
 
     # Create embedding for the word
     embeddings = OpenAIEmbeddings(
-    model="text-embedding-3-large",
-    dimensions=3072
+    model="text-embedding-3-small",
+    dimensions=512
     )
-    embedding = embeddings.embed_query(word)
-    rprint("embedding created: ", embedding)
-
+    embedding = embeddings.embed_documents(words)
+    rprint("Embedding created for words: ", words)
     return embedding
 
 
@@ -96,8 +96,8 @@ def get_embedding_for_word(word: str):
     conn = db.get_db_connection()
     cur = conn.cursor()
 
-    # Check if the word exists in the english_dict_openai_large table
-    cur.execute("SELECT embedding FROM english_dict_openai_large WHERE word = %s", (word,))
+    # Check if the word exists in the english_dict_openai_small table
+    cur.execute("SELECT embedding FROM english_dict_openai_small WHERE word = %s", (word,))
     embedding = cur.fetchone()
 
     cur.close()
@@ -109,8 +109,8 @@ def get_word_and_embedding(word: str):
     conn = db.get_db_connection()
     cur = conn.cursor()
 
-    # Check if the word exists in the english_dict_openai_large table
-    cur.execute("SELECT word, embedding FROM english_dict_openai_large WHERE word = %s", (word,))
+    # Check if the word exists in the english_dict_openai_small table
+    cur.execute("SELECT word, embedding FROM english_dict_openai_small WHERE word = %s", (word,))
     word_and_embedding = cur.fetchone()
 
     cur.close()
@@ -122,15 +122,27 @@ def process_string_return_similarity(input_string: str, table_name: str):
     rprint("input_string: ", input_string)
     result_array = []
     array_to_process = create_array_from_string(input_string)
+    array_to_embed = []
+    array_for_argument = []
 
     for word in array_to_process[0]:
         sql_result = get_word_and_embedding(word)
         if sql_result is None:
-            insert_word_to_db(word)
-            sql_result = get_word_and_embedding(word)
+            array_to_embed.append(word)
+        else:
+            array_for_argument.append(sql_result)
 
+    embeddings = create_embedding_for_words(array_to_embed)
+
+    for word, embedding in zip(array_to_embed, embeddings):
+        insert_word_embedding_to_db(word, embedding)
+        sql_result = get_word_and_embedding(word)
+        array_for_argument.append(sql_result)
+
+    for sql_result in array_for_argument:
         pg_word = sql_result[0]
         pg_embedding = sql_result[1]
+        rprint(f"pg_word: {pg_word}")
         
         if isinstance(pg_embedding, str):
             pg_embedding = ast.literal_eval(pg_embedding)
@@ -140,7 +152,6 @@ def process_string_return_similarity(input_string: str, table_name: str):
                 query = build_column_retrieval_query(table_name)
                 results = session.run(query, queryVec=pg_embedding)
                 for record in results:
-
                     result_array.append({
                         "columnName": record['n']['columnName'],
                         "value": record['n']['value'],
@@ -153,6 +164,17 @@ def process_string_return_similarity(input_string: str, table_name: str):
 
     return result_array
 
+def remove_duplicate_dicts(similar_rows):
+    seen = set()
+    unique_rows = []
+    
+    for row in similar_rows:
+        key = (row['columnName'], row['value'])
+        if key not in seen:
+            seen.add(key)
+            unique_rows.append(row)
+            
+    return unique_rows
 
         
 

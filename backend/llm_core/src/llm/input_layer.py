@@ -9,7 +9,9 @@ state = {
                 "augmented_question": None,
                 "answer": None,
                 "table_name": None,
+                "table_relevant_data": None,
                 "pdf_name": None,
+                "pdf_relevant_data": None,
                 "messages": None,
                 "agent_scratchpads": [],
                 "columns_and_types": None,
@@ -24,7 +26,8 @@ state = {
                 "is_multiagent": False,
                 "agent_step": 0,
                 "runtime_queries": "",
-                "query_failed": None
+                "query_failed": None,
+                "message_number": 0
             }
 
 
@@ -36,7 +39,9 @@ async def set_chat_state(manager, session_id, message: MessageInstance):
         "augmented_question": None,
         "answer": None,
         "table_name": await manager.get_chatbot_table_name(session_id),
+        "table_relevant_data": None,
         "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+        "pdf_relevant_data": None,
         "messages": [HumanMessage(content=message.message)],
         "agent_scratchpads": [],
         "columns_and_types": await manager.get_chatbot_columns_and_types(session_id),
@@ -51,7 +56,8 @@ async def set_chat_state(manager, session_id, message: MessageInstance):
         "is_multiagent": False,
         "agent_step": 0,
         "runtime_queries": "",
-        "query_failed": None
+        "query_failed": None,
+        "message_number": 0
     }
 
     return state
@@ -66,7 +72,9 @@ async def set_sql_chat_state(manager, session_id, message: MessageInstance):
         "augmented_question": None,
         "answer": None,
         "table_name": await manager.get_chatbot_table_name(session_id),
+        "table_relevant_data": None,
         "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+        "pdf_relevant_data": None,
         "messages": [HumanMessage(content=message.message)],
         "agent_scratchpads": [],
         "columns_and_types": await manager.get_chatbot_columns_and_types(session_id),
@@ -81,7 +89,8 @@ async def set_sql_chat_state(manager, session_id, message: MessageInstance):
         "is_multiagent": False,
         "agent_step": 0,
         "runtime_queries": "",
-        "query_failed": None
+        "query_failed": None,
+        "message_number": 0
     }
 
     return state
@@ -97,7 +106,9 @@ async def set_pdf_chat_state(manager, session_id, message: MessageInstance):
         "augmented_question": None,
         "answer": None,
         "table_name": await manager.get_chatbot_table_name(session_id),
+        "table_relevant_data": None,
         "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+        "pdf_relevant_data": None,
         "messages": [HumanMessage(content=message.message)],
         "agent_scratchpads": [],
         "columns_and_types": await manager.get_chatbot_columns_and_types(session_id),
@@ -112,7 +123,8 @@ async def set_pdf_chat_state(manager, session_id, message: MessageInstance):
         "is_multiagent": False,
         "agent_step": 0,
         "runtime_queries": "",
-        "query_failed": None
+        "query_failed": None,
+        "message_number": 0
     }
 
     return state

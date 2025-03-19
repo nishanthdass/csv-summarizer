@@ -30,7 +30,7 @@ from langgraph.types import Command
 import logging
 from rich import print as rprint
 from config import LoadPostgresConfig
-from llm_core.src.llm.langgraph_graph_api import workflow, workflow_sql, workflow_pdf, workflow_multi
+from llm_core.src.llm.langgraph_graph_api import workflow_sql, workflow_pdf, workflow_multi
 from llm_core.src.llm.agents import *
 from llm_core.src.utils.utility_function import *
 from llm_core.src.utils.chatbot_manager import ChatbotManager
@@ -150,6 +150,7 @@ async def run_chatbots(session_id: str):
                     input_arg = Command(resume=message.message)
 
                 async for event in app.astream_events(input_arg, config, version="v2"):
+                    # rprint(f"event: {event['event']}")
                     if event["event"] == "on_chain_start":
                         # if "run_id" in event:
                         #     rprint("on_chain_start: ", event["run_id"], cur_agent)
@@ -253,7 +254,9 @@ async def handle_on_chat_model_end(event: dict,
     current_time = end_time - time_table.get(str(role), 0)
     message = await usage_agent_stream(manager, session_id, usage_metadata, role, current_time)
     message = MessageInstance(**message)
+    # rprint("message: ", message)
     await safe_send(active_websockets, message, session_id)
+
 
 async def handle_on_chain_start(
     event: dict,
@@ -342,15 +345,22 @@ async def handle_on_chat_model_stream(
     str_response: List[str],
     char_backlog: List[str],
     time_table: dict
+    
 ) -> Tuple[str, bool, List[str], List[str]]:
-    # if len(event['data'].keys()) > 1:
-    #     rprint("handle_on_chat_model_stream event key: ", event['data'].keys())
+    if len(event['data']['chunk'].additional_kwargs.keys()) > 0:
+        rprint("event: ", event['data']['chunk'].additional_kwargs)
     
     prev_char_backlog = char_backlog.copy()
 
     word_buffer, word_state, str_response, char_backlog = process_stream_event(
         event, words_to_find, word_buffer, word_state, str_response, char_backlog
     )
+    
+    # if 'finish_reason' in event["data"]['chunk'].response_metadata:
+    #     reason = event["data"]['chunk'].response_metadata['finish_reason']
+    #     if reason == "stop":
+    #         rprint("Finish Reason: ", reason)
+            # rprint("Event: ", word_buffer)
 
     if word_state and len(str_response) > 0 and prev_char_backlog == char_backlog:
         role = event['metadata']['langgraph_node']
@@ -358,7 +368,6 @@ async def handle_on_chat_model_stream(
         current_time = end_time - time_table.get(str(role), 0)
         message = await char_agent_stream(manager, session_id, word_buffer, role, current_time)
         message = MessageInstance(**message)
-
         await safe_send(active_websockets, message, session_id)
 
     return word_buffer, word_state, str_response, char_backlog

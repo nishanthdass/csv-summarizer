@@ -67,8 +67,7 @@ PDFAGENTPROMPTTEMPLATE_A = PromptTemplate(template=pdf_agent_prompt_a, input_var
 
 class PDF_KG_RETRIEVE_TEMPLATE(BaseModel):
     answer: str = Field(description="your answer to the question as it stands with <_START_> in the beginning and <_END_> at the end")
-    sources: str = Field(description="References to the source of info from the pdf")
-    data_points: str = Field(description="Data points from the pdf")
+    data_points: str = Field(description="most relevant data points such as addresses, names, dates, emails, etc")
 
 parser = JsonOutputParser(pydantic_object=PDF_KG_RETRIEVE_TEMPLATE)
 
@@ -77,10 +76,9 @@ pdf_agent_prompt_b = """
                 user,
                 You are an information gatherer for a pdf document. Given the following extracted parts of a PDF document (called 'summaries'), a question and columns from a table (called 'columns') your task is:
                 1. Gather any fundamental information that is relevant to the question (e.g., addresses, dates, values, events). 
-                2. When looking for information in the PDF, try to find data specific to the columns that the user asks for.
-                3. Cite where you found each piece of information, using references in the 'sources' field.
-                4. Place all relevent information in the 'answer' field including useful data points. Do not be stingy with information, more is better.
-                5. Place the most relevent data points in the data_points field without any other text. Use commas to separate data points. For example: Phone numbers, emails, addresses, dates, etc.
+                2. When looking for information in the PDF, find data specific to the columns that the user asks for.
+                3. Place all relevent information in the 'answer' field including useful data points.
+                4. Place the most relevent data points from the pdf in the 'data_points' field without any other text. Use commas to separate data points. For example: Phone numbers, emails, addresses, dates, etc.
 
                 question: {question}
                 columns: {columns}
@@ -155,7 +153,6 @@ DATAANALYSTMULTIAGENTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
         "system",
         "You are an helpful guide for a table named {table_name} and a PDF document named {pdf_name}.\n"
         "Your goal is to answer the user's question by using the information from the table and the pdf.\n"
-        "The columns names for the table are {columns_and_types}.\n\n"
         "The agent_scratchpads contains information retreived from the pdf and the table. Here is the agent_scratchpads: {agent_scratchpads}.\n\n"
 
         "The question is:\n{question}\n\n"
@@ -163,11 +160,12 @@ DATAANALYSTMULTIAGENTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
         "**Steps:**\n"
         "1. Identify at a fundamental level, the information that is needed to answer the question (e.g., Who, Where, When).\n"
         "2. Look at the column names and consider if the table could give you the particular info to answer the question\n"
-        "3. If the answer can be found in the table using a query, then augment the question and set `next_agent` to `sql_agent`, otherwise set `next_agent` to `__end__`.\n"
-            "- Augment the question with information derived from the pdf and the most relevant columns and values of the table in the agent_scratchpads.\n"
+        "3. Augment the question by including the data points from the table(column name and value) and PDF and place your augmented question in the 'augmented_question' field.\n"
+        "4. If the answer can be found via a query, then set `next_agent` to `sql_agent`, otherwise set `next_agent` to `__end__`.\n"
+ 
 
         "Always respond in json format:\n"
-            "{{\"current_agent\": \"data_analyst\",\"next_agent\": \"__end__\", \"question\": \"Initial question\", \"augmented_question\": \"augmented question\", \"answer\": \" <_START_> What you think is needed to answer the question <_END_> \", \"is_multiagent\": \"True if routing to another agent, and false if routing to __end__\", \"step\": \"current step number \"}}\n\n")
+            "{{\"current_agent\": \"data_analyst\",\"next_agent\": \"agent name which is either sql_agent or __end__\", \"question\": \"Initial question\", \"augmented_question\": \"augmented question\", \"answer\": \" <_START_> What you think is needed to answer the question <_END_> \", \"is_multiagent\": \"True if routing to another agent, and false if routing to __end__\"}}\n\n")
         ])
 
 

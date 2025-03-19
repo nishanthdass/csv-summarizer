@@ -35,6 +35,8 @@ const groupedMessages = messages.reduce((acc, message) => {
         lastGroup.visualizing_query = message.visualizing_query || lastGroup.visualizing_query;
         lastGroup.viewing_query_label = message.viewing_query_label || lastGroup.viewing_query_label;
         lastGroup.query_type = message.query_type || lastGroup.query_type;
+        lastGroup.thread_id = message.thread_id || lastGroup.thread_id;
+        lastGroup.time = message.time || lastGroup.time;
     } else {
         // Create a new group
         acc.push({ role: message.role,
@@ -43,12 +45,15 @@ const groupedMessages = messages.reduce((acc, message) => {
             token_objects: message.token_object || [], 
             visualizing_query : message.visualizing_query || "", 
             viewing_query_label: message.viewing_query_label || "", 
-            query_type: message.query_type || "" });
+            query_type: message.query_type || "",
+            thread_id: message.thread_id || "",
+            time: message.time || ""
+        });
         
     }
 
     return acc;
-}, [] as { role: string; table_name: string; messages: string[]; token_objects: any[]; visualizing_query: string; viewing_query_label: string; query_type: string }[]);
+}, [] as { role: string; table_name: string; messages: string[]; token_objects: any[]; visualizing_query: string; viewing_query_label: string; query_type: string; thread_id: string; time: string }[]);
 
 
 
@@ -163,8 +168,20 @@ return (
                         </table>
                     </>
                 )}
+
+                <>
+                <br/>
+                {group.thread_id && group.thread_id !== "" && (
+                    <div className='chat-thread-id'>Thread ID: {String(group.thread_id)}</div>
+                )}
+                {group.role !== "User" && group.time && group.time !== "" && (
+                    <div className='chat-time'>Response time: {String(group.time)} seconds</div>
+                )}
+                </>
+
             </div>
         ))}
+        
         </div>
         </>
     )}

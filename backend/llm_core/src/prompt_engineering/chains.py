@@ -18,6 +18,9 @@ from langchain_core.prompts import ChatPromptTemplate
 import logging
 import json
 import re
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk
+
 
 
 openai_var  = LoadOpenAIConfig()
@@ -77,7 +80,13 @@ async def call_sql_agent(model, state: MessageState) -> MessageState:
         augmented_question = state["augmented_question"]
     else:
         augmented_question = None
+    
 
+    table_relevant_data = "None"
+    if "table_relevant_data" in state:
+        if state["table_relevant_data"] is not None:
+            table_relevant_data = state["table_relevant_data"]
+        
     if state["agent_step"] > 0:
         # rprint("agent_step > 0 Agent Step: ", state["agent_step"])
         # rprint("agent_step > 0 Unsliced: ", trimmed_messages)
@@ -152,12 +161,11 @@ async def call_sql_agent(model, state: MessageState) -> MessageState:
         1   The **answer query** should answer the user's question. 
                 A.  Test the query to ensure it returns a value that is not empty, otherwise modify the answer query and try again until it yields a non-empty result.
 
-                B.  Base all query arguments on the information in the user’s question.
+                B.  Base all query arguments on the information in the user’s question and on the information in table_relevant_data which is proven related datapoints to use in the query: {table_relevant_data}.
                     -   Avoid generating your own data for the WHERE clause, but it is fine to manipulate the range slightly to widen the results.
                     -   Avoid vague or overly broad filters that return irrelevant results.
                     
                 C.  Iterate from more specific to less specific queries.
-                    -   If a user specifies a single ZIP code (e.g., 10023), consider expanding it into a range (e.g., 10020-10025) if the initial query fails to return results.
                     -   Similarly, if a user references a numeric value like “40 degrees,” expand it to a small range (e.g., 39–41) if necessary.
                     
                 D.  Once tested, place the query in the 'answer_retrieval_query' field.
@@ -278,7 +286,10 @@ async def call_sql_manipulator_agent(model, state: MessageState) -> MessageState
 
 async def json_parser_prompt_chain(prompt, model, inputs):
     """Allow user to ask a question to the model and get a json response. User can change the model."""
-    model = ChatOpenAI(model=model, max_tokens=None, stream_usage=True, temperature=0)
+    model = ChatOpenAI( model=model, 
+                        max_tokens=None, 
+                        stream_usage=True, 
+                        temperature=0 )
     parser = JsonOutputParser(pydantic_object=Route)
     chain = prompt | model | parser
     response = await chain.ainvoke(inputs)
@@ -296,10 +307,22 @@ async def json_parser_prompt_chain_with_tools(prompt, model, inputs, tools, conf
     return response
 
 
+class CustomStreamingHandler(StreamingStdOutCallbackHandler):
+    def on_llm_new_token(self, token: str, **kwargs):
+        # Print tokens for debugging
+        print(f"Streaming token: {token}")
+        
+        # Modify AIMessageChunk with additional kwargs
+        chunk = AIMessageChunk(content=token, additional_kwargs={"source": "knowledge_graph"})
+        
+        # Return or process the chunk (depending on your use case)
+        return chunk
+
+
 def kg_retrieval_chain(user_message, prompt, state):
     chain_type_kwargs = {"prompt": prompt}
     rprint("kg_retrieval_chain: Function started")
-    rprint("chain_type_kwargs: ", chain_type_kwargs)
+    # rprint("chain_type_kwargs: ", chain_type_kwargs)
 
 
     kg_chain_window = RetrievalQAWithSourcesChain.from_chain_type(
@@ -308,7 +331,7 @@ def kg_retrieval_chain(user_message, prompt, state):
                     openai_api_key=openai_var.openai_api_key,
                     openai_api_base=openai_var.openai_endpoint,
                     model=openai_var.openai_model,
-                    verbose=True
+                    verbose=True,
                     ), 
         chain_type = "stuff", 
         retriever = kg_retrieval_window(state["pdf_name"]),

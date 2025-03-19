@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class MessageInstance(BaseModel):
     role: Optional[str] = None
     table_name: Optional[str] = None
+
     pdf_name: Optional[str] = None
     event: Optional[str] = None
     message: Optional[str] = None
@@ -25,6 +26,7 @@ class MessageInstance(BaseModel):
     viewing_query_label: Optional[str] = None
     query_type: Optional[str] = None
     has_function_call: Optional[bool] = None
+    message_number: Optional[int] = None
     
     
 
@@ -46,7 +48,9 @@ class MessageState(TypedDict):
     augmented_question: str
     answer: str
     table_name: str
+    table_relevant_data: str
     pdf_name: str
+    pdf_relevant_data: str
     messages: Annotated[Sequence[BaseMessage], add_messages]
     agent_scratchpads: list
     columns_and_types: str
@@ -58,6 +62,7 @@ class MessageState(TypedDict):
     agent_step: int
     runtime_queries: str
     query_failed: str
+    message_number: int
     
 
 

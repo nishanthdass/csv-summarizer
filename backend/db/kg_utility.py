@@ -469,7 +469,7 @@ def create_column_vector_index():
             FOR (c:Column) ON (c.columnEmbedding) 
             OPTIONS { 
                 indexConfig: {
-                    `vector.dimensions`: 3072,
+                    `vector.dimensions`: 512,
                     `vector.similarity_function`: 'cosine'    
                 }
             }
@@ -486,7 +486,7 @@ def create_row_value_vector_index():
             FOR (r:RowValue) ON (r.rowValueEmbedding) 
             OPTIONS { 
                 indexConfig: {
-                    `vector.dimensions`: 3072,
+                    `vector.dimensions`: 512,
                     `vector.similarity_function`: 'cosine'    
                 }
             }
@@ -507,14 +507,14 @@ def create_column_embeddings():
         token: $openAiApiKey, 
         endpoint: $openAiEndpoint,
         model: $model,
-        dimensions: 3072
+        dimensions: 512
       }) AS vector
     CALL db.create.setNodeVectorProperty(column, "columnEmbedding", vector)
     """, 
     params={
         "openAiApiKey": openai_var.openai_api_key,
         "openAiEndpoint": openai_var.openai_endpoint,
-        "model" : openai_var.openai_embedding_model,
+        "model" : openai_var.openai_embedding_modal_small,
     })
     kg.refresh_schema()
 
@@ -533,14 +533,14 @@ def create_row_value_embeddings():
                 token: $openAiApiKey, 
                 endpoint: $openAiEndpoint,
                 model: $model,
-                dimensions: 3072
+                dimensions: 512
             }) AS vector
         CALL db.create.setNodeVectorProperty(rowValue, "rowValueEmbedding", vector)
     """, 
     params={
         "openAiApiKey": openai_var.openai_api_key,
         "openAiEndpoint": openai_var.openai_endpoint,
-        "model" : openai_var.openai_embedding_model,
+        "model" : openai_var.openai_embedding_modal_small,
     })
     kg.refresh_schema()
 
@@ -597,27 +597,27 @@ def connect_row_value_to_column(file_name_minus_extension):
 
 
 def process_csv_columns_to_kg(column_array, random_rows, file_name_minus_extension):
-    # rprint("column_array", column_array)
-    # rprint("random_rows", random_rows)
-    # rprint("file_name_minus_extension", file_name_minus_extension)
+    rprint("column_array", column_array)
+    rprint("random_rows", random_rows)
+    rprint("file_name_minus_extension", file_name_minus_extension)
     rprint("Begin processing")
-    # rprint(f"Processing {file_name_minus_extension}")
-    # create_column_constraints()
-    # rprint("Adding column nodes...")
-    # add_column_as_node(column_array, file_name_minus_extension)
-    # rprint("Creating column vector index...")
-    # create_column_vector_index()
-    # rprint("Creating column embeddings...")
-    # create_column_embeddings()
-    # rprint("Creating tablename node...")
-    # create_tablename_from_column_nodes(file_name_minus_extension)
-    # rprint("Connecting column nodes to table nodes...")
-    # connect_column_to_table(file_name_minus_extension)
-    # rprint("Create Row Value nodes...")
-    # add_row_value_nodes(random_rows, file_name_minus_extension)
-    # rprint("Creating row value vector index...")
-    # create_row_value_vector_index()
-    # rprint("Creating row value embeddings...")
-    # create_row_value_embeddings()
-    # rprint("Connecting row value nodes to column nodes...")
-    # connect_row_value_to_column(file_name_minus_extension)
+    rprint(f"Processing {file_name_minus_extension}")
+    create_column_constraints()
+    rprint("Adding column nodes...")
+    add_column_as_node(column_array, file_name_minus_extension)
+    rprint("Creating column vector index...")
+    create_column_vector_index()
+    rprint("Creating column embeddings...")
+    create_column_embeddings()
+    rprint("Creating tablename node...")
+    create_tablename_from_column_nodes(file_name_minus_extension)
+    rprint("Connecting column nodes to table nodes...")
+    connect_column_to_table(file_name_minus_extension)
+    rprint("Create Row Value nodes...")
+    add_row_value_nodes(random_rows, file_name_minus_extension)
+    rprint("Creating row value vector index...")
+    create_row_value_vector_index()
+    rprint("Creating row value embeddings...")
+    create_row_value_embeddings()
+    rprint("Connecting row value nodes to column nodes...")
+    connect_row_value_to_column(file_name_minus_extension)

@@ -2,6 +2,60 @@ import logging
 from rich import print as rprint
 from models.models import MessageInstance
 import openai
+from db.db_utility import run_query
+from langchain_core.messages import HumanMessage, AIMessage
+from models.models import MessageState
+from rich import print as rprint
+import json
+import re
+
+def sql_agent_function(table_name: str, query: str, role: str, query_type: str):
+    message_str = ""
+    try:
+        res = run_query(table_name, query, role, query_type)
+        keys = list(res[0].keys())
+        if len(keys) >= 1:
+            for dict_res in res:
+                for key in keys:
+                    if key != "ctid":
+                        message_str += key + ": " + str(dict_res[key]) + "<br/>"
+                message_str += "<br/>"
+
+        res = {"Result": message_str}
+        return res
+    except Exception as e:
+        rprint(f"Query failed: {str(e)}")
+        res = {"Error": str(e)}
+        return res
+
+
+async def convert_to_dict(string: str) -> dict:
+    match = re.search(r'```json\s*(\{.*?\})\s*```', string, re.DOTALL)
+    if match:
+        json_str = match.group(1).strip()
+    else:
+        json_str = string.strip()
+
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        print("JSON parsing error:", e)
+        return {}
+
+
+async def set_state(state: MessageState, response: dict) -> MessageState:
+    for key, value in response.items():
+        if key == "answer":
+            answer = AIMessage(content=value)
+            state["answer"] = answer
+            state["messages"].append(answer)
+        else:
+            state[key] = value
+    return state
+
+
+
+
 
 def find_word_in_text( word, words_to_find, word_buffer):
     # print( "input word: ", word )

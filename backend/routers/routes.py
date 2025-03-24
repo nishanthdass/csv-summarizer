@@ -5,8 +5,8 @@ from config import LoadPostgresConfig
 from models.models import TableNameRequest, PdfNameRequest, MessageInstance
 from db.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data, run_query
 from services.tasks import get_task, delete_task_table
-from llm_core.langgraph_multiagent import run_chatbots, active_websockets, tasks, manager, message_queue
-from llm_core.src.utils.chatbot_manager import start_chatbot, alter_table_name, alter_pdf_name
+from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
+from llm_core.src.utils.chatbot_manager import start_chatbot, set_table, set_pdf
 from rich import print as rprint
 import os
 import re
@@ -117,7 +117,7 @@ async def get_pdf_files(request: Request):
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
     
-# Refactor to send table_name via Request
+
 @router.post("/get-table", status_code=200)
 async def get_table(table: TableNameRequest, request: Request):
     table_name = table.table_name
@@ -131,7 +131,7 @@ async def get_table(table: TableNameRequest, request: Request):
     
     if not table_name:
         try:
-            await alter_table_name(session['name'], None, manager)
+            await set_table(session['name'], None, manager)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to get table name")
@@ -139,7 +139,7 @@ async def get_table(table: TableNameRequest, request: Request):
         try:
 
             table_data = get_table_data(table_name, page, page_size)
-            await alter_table_name(session['name'], table_name, manager)
+            await set_table(session['name'], table_name, manager)
             
             return table_data
         except psycopg2.DatabaseError as e:
@@ -160,7 +160,7 @@ async def set_pdf(pdf_name: PdfNameRequest, request: Request):
 
     if not pdf_name.pdf_name:
         try:
-            await alter_pdf_name(session['name'], None, manager)
+            await set_pdf(session['name'], None, manager)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -187,7 +187,7 @@ async def set_pdf(pdf_name: PdfNameRequest, request: Request):
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
         
         try:
-            await alter_pdf_name(session['name'], file_name_minus_extension, manager)
+            await set_pdf(session['name'], file_name_minus_extension, manager)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -232,14 +232,10 @@ async def get_pdf(pdf_name: str, request: Request):
         content_disposition_type="inline"   
     )
 
-# @router.get("/status/{table_name}/{task_id}")
-# async def get_status(table_name: str, task_id: str):
-#     return get_task(table_name, task_id)
-
-
 
 @router.websocket("/ws/chat-client")
 async def websocket_endpoint(websocket: WebSocket):
+    """ Establishes a WebSocket connection and handles incoming chat messages. """
     session = {}
     try:
         session = await verify_session(websocket)
@@ -261,8 +257,12 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"Closing WebSocket connection for session: {session}")
         active_websockets.pop(session['name'], None)
 
+
 @router.post("/chat-server")
 async def chat_server(request: Request):
+    """
+    This endpoint is used to start the chatbot for a session.
+    """
     try: 
         session = await verify_session(request)
     except Exception as e:
@@ -274,23 +274,19 @@ async def chat_server(request: Request):
         
         if not tasks.get(session['name']):
             await start_chatbot(session['name'], manager)
-            rprint("chat-server task created for session: ", session)
             task = asyncio.create_task(run_chatbots(session['name']))
             tasks[session['name']] = task
         else:
             print("chat-server task already exists for session: ", session)
             task = tasks.get(session['name'])
-            print("The task is: ", task)
 
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
     
 
-
 @router.post("/sql-query")
 async def sql_query(request: Request):
-    rprint("sql-query")
 
     try: 
         session = await verify_session(request)
@@ -299,7 +295,6 @@ async def sql_query(request: Request):
 
     try:
         body = await request.json()
-        rprint("body: ", body)
         result = run_query(body['table_name'], body['query'], body['role'], body['query_type'])
         return JSONResponse(content={"success": True, "data": result})
 
@@ -307,7 +302,6 @@ async def sql_query(request: Request):
         rprint(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
-    
 
 async def verify_session(request: Request):
     if "user_data" not in request.session:

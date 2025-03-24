@@ -224,6 +224,13 @@ MERGE (mergedColumn:Column {columnId: $chunkParam.columnId})
 RETURN mergedColumn
 """
 
+merge_row_index_node_query = """
+MERGE (mergedRowValue:RowIndex {rowValueId: $chunkParam.rowValueId})
+    ON CREATE SET
+        mergedRowValue.rowIndex = $chunkParam.rowIndex
+RETURN mergedRowValue
+"""
+
 merge_row_value_node_query = """
 MERGE (mergedRowValue:RowValue {rowValueId: $chunkParam.rowValueId})
     ON CREATE SET
@@ -233,7 +240,6 @@ MERGE (mergedRowValue:RowValue {rowValueId: $chunkParam.rowValueId})
         mergedRowValue.rowIndex = $chunkParam.rowIndex
 RETURN mergedRowValue
 """
-
 
 def create_line_constraints():
     """Create constraints for line nodes"""
@@ -448,6 +454,7 @@ def add_column_as_node(column_array, table_name):
         node_count += 1
     print(f"Created {node_count} nodes")
 
+
 def add_row_value_nodes(random_rows, table_name):
     """Add row value nodes with metadata"""
     node_count = 0
@@ -599,25 +606,25 @@ def connect_row_value_to_column(file_name_minus_extension):
 def process_csv_columns_to_kg(column_array, random_rows, file_name_minus_extension):
     rprint("column_array", column_array)
     rprint("random_rows", random_rows)
-    rprint("file_name_minus_extension", file_name_minus_extension)
-    rprint("Begin processing")
-    rprint(f"Processing {file_name_minus_extension}")
-    create_column_constraints()
-    rprint("Adding column nodes...")
-    add_column_as_node(column_array, file_name_minus_extension)
-    rprint("Creating column vector index...")
-    create_column_vector_index()
-    rprint("Creating column embeddings...")
-    create_column_embeddings()
-    rprint("Creating tablename node...")
-    create_tablename_from_column_nodes(file_name_minus_extension)
-    rprint("Connecting column nodes to table nodes...")
-    connect_column_to_table(file_name_minus_extension)
-    rprint("Create Row Value nodes...")
-    add_row_value_nodes(random_rows, file_name_minus_extension)
-    rprint("Creating row value vector index...")
-    create_row_value_vector_index()
-    rprint("Creating row value embeddings...")
-    create_row_value_embeddings()
-    rprint("Connecting row value nodes to column nodes...")
-    connect_row_value_to_column(file_name_minus_extension)
+    # rprint("file_name_minus_extension", file_name_minus_extension)
+    # rprint("Begin processing")
+    # rprint(f"Processing {file_name_minus_extension}")
+    # create_column_constraints()
+    # rprint("Adding column nodes...")
+    # add_column_as_node(column_array, file_name_minus_extension)
+    # rprint("Creating column vector index...")
+    # create_tablename_from_column_nodes(file_name_minus_extension)
+    # rprint("Connecting column nodes to table nodes...")
+    # create_column_vector_index()
+    # rprint("Creating column embeddings...")
+    # create_column_embeddings()
+    # rprint("Creating tablename node...")
+    # connect_column_to_table(file_name_minus_extension)
+    # rprint("Create Row Value nodes...")
+    # add_row_value_nodes(random_rows, file_name_minus_extension)
+    # rprint("Creating row value vector index...")
+    # create_row_value_vector_index()
+    # rprint("Creating row value embeddings...")
+    # create_row_value_embeddings()
+    # rprint("Connecting row value nodes to column nodes...")
+    # connect_row_value_to_column(file_name_minus_extension)

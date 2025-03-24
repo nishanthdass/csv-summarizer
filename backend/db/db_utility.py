@@ -5,7 +5,6 @@ import os
 from config import LoadPostgresConfig
 from utils.pdf_processing_funct import process_pdf
 from  db.kg_utility import process_pdf_to_kg, process_csv_columns_to_kg
-from llm_core.src.utils.utility_function import get_embedding
 import shutil
 import pymupdf
 from rich import print as rprint
@@ -27,25 +26,6 @@ db = LoadPostgresConfig()
 
 #     except Exception as e:
 #         return {"detail": f"An error occurred while fetching summary data: {str(e)}"}
-
-def get_all_columns_and_types(table_name):
-
-    columns_and_types = []
-    conn = db.get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name}';")
-    columns_and_types = cur.fetchall()
-
-    cur.close()
-    conn.close()
-
-    response = ""
-    for i in range(len(columns_and_types)):
-        column_name, postgres_type = columns_and_types[i]
-        response +=  str(column_name) + "(" + str(postgres_type) + "),"
-
-    return response
 
 
 def run_query(table_name: str, query: str, role: str, query_type: str):
@@ -79,31 +59,132 @@ def run_query(table_name: str, query: str, role: str, query_type: str):
 
     return filtered_llm_query_result
 
+
+def get_all_columns_and_types(table_name):
+    conn = db.get_db_connection()
+    cur = conn.cursor()
+
+    # Get primary key column(s)
+    cur.execute(f"""
+        SELECT a.attname
+        FROM   pg_index i
+        JOIN   pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE  i.indrelid = '{table_name}'::regclass AND i.indisprimary;
+    """)
+    primary_keys = {row[0] for row in cur.fetchall()}
+
+    # Get all columns excluding 'embedding' and primary keys
+    cur.execute(f"""
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_name = %s
+          AND column_name != 'embedding';
+    """, (table_name,))
+    all_columns = cur.fetchall()
+    
+    filtered_columns = [(col, dtype) for col, dtype in all_columns if col not in primary_keys]
+
+    cur.close()
+    conn.close()
+
+    # Format output string
+    response = ",".join(f"{col}({dtype})" for col, dtype in filtered_columns)
+    return response
+
+def get_all_columns_and_types_tuple(table_name):
+    conn = db.get_db_connection()
+    cur = conn.cursor()
+
+    # Get primary key column(s)
+    cur.execute(f"""
+        SELECT a.attname
+        FROM   pg_index i
+        JOIN   pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE  i.indrelid = '{table_name}'::regclass AND i.indisprimary;
+    """)
+    primary_keys = {row[0] for row in cur.fetchall()}
+
+    # Get all columns excluding 'embedding' and primary keys
+    cur.execute(f"""
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_name = %s
+          AND column_name != 'embedding';
+    """, (table_name,))
+    all_columns = cur.fetchall()
+    
+    filtered_columns = [(col, dtype) for col, dtype in all_columns if col not in primary_keys]
+
+    cur.close()
+    conn.close()
+
+    return filtered_columns
+
+
+
+
+def get_all_columns(table_name):
+    conn = db.get_db_connection()
+    cur = conn.cursor()
+
+    # Get primary key column(s)
+
+
+
+
+
 def get_table_data(table_name: str, page: int, page_size: int):
     conn = db.get_db_connection()
     cur = conn.cursor()
 
-    cur.execute(f"SELECT to_regclass('{table_name}')")
+    # Check if table exists
+    cur.execute(f"SELECT to_regclass(%s)", (table_name,))
     table_exists = cur.fetchone()[0]
     if not table_exists:
         raise HTTPException(status_code=404, detail=f"Table {table_name} not found.")
 
+    # Get primary key column(s)
+    cur.execute(f"""
+        SELECT a.attname
+        FROM   pg_index i
+        JOIN   pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE  i.indrelid = %s::regclass AND i.indisprimary;
+    """, (table_name,))
+    primary_keys = {row[0] for row in cur.fetchall()}
+
+    # Get all column names excluding 'embedding' and primary key(s)
+    cur.execute(f"""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = %s AND column_name != 'embedding';
+    """, (table_name,))
+    all_columns = [row[0] for row in cur.fetchall()]
+    selected_columns = [col for col in all_columns if col not in primary_keys]
+
+    # Get column names and types for header (excluding embedding and primary key)
+    cur.execute(f"""
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_name = %s AND column_name != 'embedding';
+    """, (table_name,))
+    all_column_types = cur.fetchall()
+    filtered_column_types = [(col, dtype) for col, dtype in all_column_types if col not in primary_keys]
+    columns_and_types = convert_postgres_to_react(filtered_column_types)
+
+    # Total rows
     cur.execute(f"SELECT COUNT(*) FROM {table_name}")
     total_rows = cur.fetchone()[0]
-
     offset = (page - 1) * page_size
 
-    cur.execute(f"SELECT *, ctid FROM {table_name} LIMIT {page_size} OFFSET {offset}")
+    # Fetch paginated rows (exclude primary key & embedding)
+    column_list = ", ".join(selected_columns) + ", ctid"
+    cur.execute(f"""
+        SELECT {column_list}
+        FROM {table_name}
+        LIMIT %s OFFSET %s
+    """, (page_size, offset))
     rows = cur.fetchall()
     columns = [desc[0] for desc in cur.description]
-
-    cur.execute(f"""
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = '{table_name}';
-    """)
-    columns_and_types = cur.fetchall()
-    columns_and_types = convert_postgres_to_react(columns_and_types)
 
     cur.close()
     conn.close()
@@ -118,7 +199,11 @@ def get_table_data(table_name: str, page: int, page_size: int):
         "total_pages": (total_rows + page_size - 1) // page_size
     }
 
+    rprint(table_data)
+
     return table_data
+
+
 
 
 def get_pdf_data(pdf_name: str):
@@ -129,7 +214,7 @@ def get_pdf_data(pdf_name: str):
     table_exists = cur.fetchone()[0]
     if not table_exists:
         raise HTTPException(status_code=404, detail=f"Table {pdf_name} not found.")
-
+    
     cur.execute(f"SELECT pdf_file_path FROM {pdf_name};")
 
     file_path = cur.fetchone()[0]
@@ -151,8 +236,6 @@ def ingest_csv_into_postgres(file: UploadFile):
     Ingests the CSV file into a PostgreSQL table.
     This assumes the table does not exist and needs to be created.
     """
-    rprint("Ingesting CSV file...")
-
     file_name = file.filename
     file_load = file.file
     table_name = re.sub(r'\.csv$', '', file_name)
@@ -176,52 +259,27 @@ def ingest_csv_into_postgres(file: UploadFile):
     }
 
     column_definitions = []
-    clean_col_array = []
-    rows_with_cols = {}
-
-    all_rows_obj = []
 
     df = pd.read_csv(file_location)
     columns = df.columns
     column_types = df.dtypes
+    column_list = ", ".join(sanitize_column_name(col) for col in columns)
 
 
-    # Get all rows
-    all_rows = df.values.tolist()
-
-
-    
+    column_definitions = ["id SERIAL PRIMARY KEY"]
 
     for col, dtype in zip(columns, column_types):
         postgres_type = dtype_mapping.get(str(dtype), 'TEXT')
         clean_col = sanitize_column_name(col)
         column_definitions.append(f"{clean_col} {postgres_type}")
-        clean_col_array.append([clean_col, postgres_type])
 
-
-    for i in range(len(all_rows)):
-        for j in range(len(all_rows[i])):
-            col_name = clean_col_array[j][0]
-            row_value = str(all_rows[i][j])
-            if col_name in rows_with_cols:
-                rows_with_cols[col_name].append(row_value)
-            else:
-                rows_with_cols[col_name] = [row_value]
-
-
-    #     for j in range(len(clean_col_array)):
-    #         rprint(clean_col_array[j])
-    rprint(rows_with_cols)
-
-    process_csv_columns_to_kg(clean_col_array, rows_with_cols, table_name)
-
-    create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
-    create_table_query += ", ".join(column_definitions) + ");"
 
     conn = db.get_db_connection()
     cur = conn.cursor()
 
     try:
+        create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ("
+        create_table_query += ", ".join(column_definitions) + ");"
         cur.execute(create_table_query)
         conn.commit()
         cur.execute(f"COMMENT ON TABLE {table_name} IS 'source_type: csv';")
@@ -235,17 +293,74 @@ def ingest_csv_into_postgres(file: UploadFile):
 
     try:
         with open(file_location, 'r', encoding='utf-8') as f:
-            cur.copy_expert(f"COPY {table_name} FROM STDIN DELIMITER ',' CSV HEADER", f)
+            cur.copy_expert(
+                        f"COPY {table_name} ({column_list}) FROM STDIN DELIMITER ',' CSV HEADER", f )
         conn.commit()
     except Exception as e:
         print(f"Error ingesting data into table {table_name}: {str(e)}")
         conn.rollback()
+
+    try:
+        # Add column for embedding ALTER TABLE items ADD COLUMN embedding vector(512);
+        cur.execute(f"CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;")
+        conn.commit()
+    except Exception as e:
+        print(f"Error adding embedding column to table {table_name}: {str(e)}")
+        conn.rollback()
+
+    # try:
+    #     # get all rows
+    #     cur.execute(f"SELECT * FROM {table_name};")
+    #     rows = cur.fetchall()
+    #     # loop through rows
+    #     for i in range(len(rows)):
+    #         # join all items into a string
+    #         row_string = " ".join(str(item) for item in rows[i] if item != rows[i][0])
+    #         rprint(row_string)
+    #         # create embedding
+    #         embedding = create_embedding_for_line(row_string)
+    #         # update embedding in table
+    #         cur.execute(f"UPDATE {table_name} SET embedding = %s WHERE id = %s", (embedding, rows[i][0]))
+    #         conn.commit()
+
+    
+    # except Exception as e:
+    #     print(f"Error getting rows from table {table_name}: {str(e)}")
+    #     conn.rollback()
+
     finally:
         cur.close()
         conn.close()
         db.close_db_connection(conn)
     
 
+def get_rows_by_id(table_name: str, row_id: int):
+    rprint(f"Getting row from table '{table_name}' with id {row_id}")
+    conn = db.get_db_connection()
+    cur = conn.cursor()
+
+    # Get actual column names (excluding 'embedding')
+    cur.execute("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = %s AND column_name != 'embedding';
+    """, (table_name,))
+    columns = [row[0] for row in cur.fetchall()]
+
+    # Build a SELECT statement with those columns
+    column_list = ", ".join(columns)
+
+    cur.execute(
+        f"SELECT {column_list} FROM {table_name} WHERE id = %s",
+        (row_id,)
+    )
+    row = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    # Return row as a dictionary or None if not found
+    return dict(zip(columns, row)) if row else None
 
     
 def ingest_pdf_into_postgres(file: UploadFile):

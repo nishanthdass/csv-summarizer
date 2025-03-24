@@ -1,8 +1,6 @@
-
 from models.models import MessageState
 from langgraph.graph import START, StateGraph, END
 from llm_core.src.llm.agents import *
-
 
 
 # --- Build the SQL State Graph ---
@@ -16,9 +14,6 @@ workflow_sql.add_node("human_input", human_input)
 workflow_sql.add_edge(START, "sql_agent")
 workflow_sql.add_edge("sql_agent", END)
 workflow_sql.add_edge("human_input", "sql_agent")
-# workflow_sql.add_conditional_edges("sql_agent", lambda state: state["next_agent"])
-# workflow_sql.add_conditional_edges("human_input", lambda state: state["next_agent"])
-
 
 # --- Build the PDF State Graph ---
 workflow_pdf = StateGraph(state_schema=MessageState)
@@ -31,9 +26,6 @@ workflow_pdf.add_node("human_input", human_input)
 workflow_pdf.add_edge(START, "pdf_agent")
 workflow_pdf.add_edge("pdf_agent", END)
 workflow_pdf.add_edge("human_input", "pdf_agent")
-# workflow_pdf.add_conditional_edges("pdf_agent", lambda state: state["next_agent"])
-# workflow_pdf.add_conditional_edges("human_input", lambda state: state["next_agent"])
-
 
 # --- Build the Multiagent State Graph ---
 workflow_multi = StateGraph(state_schema=MessageState)
@@ -47,10 +39,6 @@ workflow_multi.add_node("human_input", human_input)
 workflow_multi.add_edge(START, "data_analyst")
 workflow_multi.add_edge("data_analyst", END)
 workflow_multi.add_edge("sql_agent", END)
-workflow_multi.add_edge("pdf_agent", END)
-
-workflow_multi.add_edge("pdf_agent", "data_analyst")
-workflow_multi.add_edge("sql_agent", "data_analyst")
-workflow_multi.add_edge("human_input", "data_analyst")
+workflow_multi.add_edge("human_input", "sql_agent")
 
 workflow_multi.add_conditional_edges("data_analyst", lambda state: state["next_agent"])

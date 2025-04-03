@@ -162,7 +162,6 @@ def create_embedding_for_word(word: str):
     dimensions=3072
     )
     embedding = embeddings.embed_query(word)
-    rprint("embedding created: ", embedding)
 
     return embedding
 

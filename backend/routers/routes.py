@@ -151,7 +151,7 @@ async def get_table(table: TableNameRequest, request: Request):
 
 
 @router.post("/set-pdf", status_code=200)
-async def set_pdf(pdf_name: PdfNameRequest, request: Request):
+async def set_pdf_route(pdf_name: PdfNameRequest, request: Request):
     try: 
         session = await verify_session(request)
         print(f"chat_server for session: {session}")

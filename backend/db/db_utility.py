@@ -4,7 +4,7 @@ import re
 import os
 from config import LoadPostgresConfig
 from utils.pdf_processing_funct import process_pdf
-from  db.kg_utility import process_pdf_to_kg, process_csv_columns_to_kg
+from  db.kg_utility import process_pdf_to_kg
 import shutil
 import pymupdf
 from rich import print as rprint
@@ -199,8 +199,6 @@ def get_table_data(table_name: str, page: int, page_size: int):
         "total_pages": (total_rows + page_size - 1) // page_size
     }
 
-    rprint(table_data)
-
     return table_data
 
 
@@ -394,7 +392,7 @@ def ingest_pdf_into_postgres(file: UploadFile):
 
     # rprint(pdf_obj)
     
-    process_pdf_to_kg(pdf_obj, file_name_minus_extension)
+    # process_pdf_to_kg(pdf_obj, file_name_minus_extension)
 
     conn = db.get_db_connection()
     cur = conn.cursor()

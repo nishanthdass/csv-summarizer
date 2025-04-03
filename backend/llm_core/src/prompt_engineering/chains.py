@@ -9,6 +9,7 @@ from config import LoadPostgresConfig
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_community.agent_toolkits import create_sql_agent
+
 from models.models import MessageState
 from rich import print as rprint
 from llm_core.src.prompt_engineering.templates import *
@@ -84,7 +85,7 @@ def kg_retrieval_chain(prompt, input_variables):
         input_variables,
         return_only_outputs=True,
         )
-    
+    rprint(answer["answer"])
     return answer
 
 

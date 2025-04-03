@@ -6,7 +6,7 @@ from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharact
 
 
 # Intialize variables for character text splitters
-headers = ['#', '##', '###', '####', '#####', '######']
+headers = ['#', '##', '###', '####', '#####', '######', '**', '***', '****', '*****', '******']
 
 headers_to_split_on = [
     ("#", "Header 1"),
@@ -15,6 +15,12 @@ headers_to_split_on = [
     ("####", "Header 4"),
     ("#####", "Header 5"),
     ("######", "Header 6"),
+    ("**", "Header 1"),
+    ("***", "Header 2"),
+    ("****", "Header 3"),
+    ("*****", "Header 4"),
+    ("******", "Header 5"),
+    ("*******", "Header 6"),
 ]
 
 separators = [
@@ -105,8 +111,9 @@ def markdown_chunk_splitter(page_lines):
     '''
     md_lines = []
     for line in page_lines:
+        rprint("line: ", line)
         md_header_splits = markdown_splitter.split_text(line)
-        
+        rprint("md_header_splits: ", md_header_splits)
         md_lines.append(md_header_splits[0])
     return md_lines
 
@@ -226,7 +233,6 @@ def process_pdf(pdf_file, file_path, page_nums=None, output_folder_path=None, fi
         page_lines = split_into_paragraphs(words, text)
         # Convert page lines to markdown
         md_lines = markdown_chunk_splitter(page_lines)
-
         # Insert line number, page number into metadata
         md_lines, prev_header = insert_metadata(md_lines, page, has_images, file_name_minus_ext, prev_header)
         # Split markdown into chunks

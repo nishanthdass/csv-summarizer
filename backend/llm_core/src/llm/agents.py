@@ -109,6 +109,7 @@ async def pdf_agent_node(state: MessageState) -> MessageState:
     pdf_kg_parser = JsonOutputParser(pydantic_object=PDF_KG_RETRIEVE_TEMPLATE)
     input_variables={"question": question, "pdf_name": state["pdf_name"], "format_instructions": pdf_kg_parser.get_format_instructions()}
     answer = kg_retrieval_chain(PDFAGENTPROMPTTEMPLATE_A, input_variables)
+    rprint("[purple] PDF Agent Node -> Answer: [/purple]", answer["answer"])
 
     answer = await convert_to_dict(answer["answer"])
 

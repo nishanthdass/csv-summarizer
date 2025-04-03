@@ -5,170 +5,234 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 
-TABLEONLYPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
-        ("system",
-        "You are the supervisor of a conversation about a table that goes by {table_name}. Never make assumptions about the content of the table based on the name of the table as a bananas column can exist in the table. Ensure that all decisions are based on facts from queries or from the other agents."
-        "Your tasks are:\n\n"
-        "1. If a few database queries are needed to answer the user's question, then route the question to `sql_agent`. DO not make assumptions.\n\n"
-        "2. If the qustion from the user is about manipulating the data in the table, then route the question to `sql_manipulator_agent`.\n\n"
-        "3. If no database query or deeper analysis is needed, set the next_agent to '__end__' and answer the question.\n\n"
-        "4. If nessecary, look through {conversation_history} to look at previous messages for context.\n\n"
-        "5. If the question has nothing to do with the {table_name} or if {table_name} is None table, set the next_agent to '__end__' and explain why. Never assueme anything about the table"
-        "the question is unrelated.\n\n"
-        "Return in json format:\n"
-        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer to question or the step being taken to answer the question <_END_>\", \"answer_retrieval_query\": The previously created sql_agent query(with the ctid) or an empty string. Only use when retrieving answer from conversation_history.\", \"viewing_query_label\": The previously created sql_agent query(with the label) or an empty string.\"}}\n\n"
-        "The user's last request:\n{user_message}")
-    ])
+def create_data_analyst_prompt(format_instructions):
+    prompt_template = PromptTemplate(
+    template="""
+            You are a data analyst that deciphers the right information to augment the initial question.
+            Your goal is to augment the question with data points from the table so that a SQL query can be created to answer the question.
+
+            You are given the following information:
+            The initial question is:
+            {question}
+
+            The excerpt from the pdf is:
+            {pdf_data}
+
+            The table_data contains column names and their respective values. Here is the table_data:
+            {table_data}
+
+           Steps:
+            1. Augment the question with data from both the pdf_data and the table_data to make the question more specific so that a SQL query can be created. 
+            2. Use the most relevant data points in table_data to enhance the augmented question. Ignore irrelevant data points.
+            2. If a part of the table_data is not in the pdf_data, then add the part of the table_data to the augmented question.
+
+            Follow the ouptut schema below:
+            {format_instructions}
+
+            """,
+                input_variables=["question", "pdf_data", "table_data"],
+
+                partial_variables={"format_instructions": format_instructions},
+            )
+
+    return prompt_template
 
 
-TABLEANDPDFPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
-        ("system",
-        "You are the supervisor of a conversation about a table that goes by {table_name} and a pdf that goes by {pdf_name}.\n\n"
-        "Route the question to `data_analyst`\n\n"
-        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer or the step being taken to answer the question <_END_>\"}}\n\n"
-        "The user's last request:\n{user_message}")
-    ])
+SQLQUERYTYPEAGENTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
+            ("system",
+            "Read the user's question and identify if the question is a Modify Data Query (e.g., Insert, Update, Delete, Merge, Create, Alter, Drop, Truncate, Rename, etc) or a Retrieve Query (e.g., Select, Group By, Order By, etc.)."
+            "If the question is a Modify Data Query, then place 'manipulation' in the 'query_type' field."
+            "If the question is a Retrieve Query, then place 'retrieval' in the 'query_type' field."
+            "If the question is neither, then place 'retrieval' in the 'query_type' field."
+            "Users question is: {input}"
+            "Return in json format:\n"
+            "{{\"query_type\": \"Either retrieval or manipulation\"}}\n\n")])
 
 
-PDFONLYPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
-        ("system",
-        "You are the supervisor of a conversation about a pdf document that goes by {pdf_name}.\n\n" 
-        "Never make assumptions about the content of the pdf.\n\n"
-        "Simply let the user know that you can route the question to `pdf_agent` who can answer the question.\n\n"
-        "Return in json format and set the next_agent to 'pdf_agent':\n"
-        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
-        "The user's last request:\n{user_message}" )
-    ])
+async def create_sql_retrieval_prompt(question: str, last_message: list, conversation_history: list):
+    prompt_template = f"""
+                    You are a SQL specialist who can write SQL queries to answer the user's question. 
+                    You must produce two queries:
+                    1) An **answer_retrieval_query query** that directly addresses the user's question.
+                    2) A **visualization query** to help visualize the results of the answer query.
+
+                    The user's initial question: {question}
+                    The user's last message: {last_message}
+                    Conversation history (if needed): {conversation_history}
+
+                    Requirements for the answer_retrieval_query:
+                    - If the answer_retrieval_query does not yield any results or fails, then set "next_agent" to "human_input". Explain why it failed in the "answer" field, provide suggestions, and wait for user response.
+                    - If successful and results are more than 0, place the final tested query in "answer_retrieval_query". 
+                    - Do not use "LIMIT" unless needed to answer the question.
+
+                    Requirements for the visualization query:
+                    - Include ctids in the SELECT clause.
+                    - Only provide a visualization query if the answer_retrieval_query returns results (non-empty).
+                    - The query should be specific to the rows that answer the question.
+                    - If aggregation is needed, ensure all non-aggregated columns are in the GROUP BY clause.
+                    - Typically select the whole row (ctid, *), or select just ctid plus relevant columns.
+
+                    Label the visualization query (max 7 words), e.g. "Select all cars", "Select running totals", etc.
+
+                    Return the following JSON exactly (fill in the fields accordingly, no extra fields):
+
+                    {{
+                    "current_agent": "sql_agent",
+                    "next_agent": "__end__ if query yields non-empty results, else 'human_input'",
+                    "question": "None",
+                    "answer": "<_START_> Explanation of why this query is best, or explanation of failure. <_END_>",
+                    "query_type": "retrieval",
+                    "answer_retrieval_query": "The final tested retrieval query",
+                    "visualize_retrieval_query": "Query for visualization (if any)",
+                    "visualize_retrieval_label": "A label describing the visualization query"
+                    }}
+                    """
+
+    return prompt_template
 
 
-NEITHERTABLEORPDFPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
-        ("system",
-        "You are the supervisor of a conversation about the data in csv tables and pdf documentations.\n\n"
-        "The user has  not selected a table or pdf yet. Never make assumptions about the content of the table or pdf.\n\n"
-        "Simply let the user know that you do not have access to the tables or pdfs and ask them to select a table and/or pdf.\n\n"
-        "Return in json format and set the next agent to '__end__:\n"
-        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
-        "The user's last request:\n{user_message}")
-    ])
+async def create_sql_multiagent_retrieval_prompt(question: str, table_data_points: str):
+    prompt_template = f"""
+                    You are a SQL specialist who can write SQL queries to answer the user's question. 
+                    You must produce two queries:
+                    1) An **answer_retrieval_query query** that directly addresses the user's question.
+                    2) A **visualization query** to help visualize the results of the answer query.
+
+                    The user's initial question: {question}
+                    Valid Data points from the table (column & value): {table_data_points}
+
+                    Requirements for the answer_retrieval_query:
+                    - Valid data points are curated from the table data to help you avoid mistakes in your query, use them to correct your query.
+                    - If the answer_retrieval_query does not yield any results or fails, then set "next_agent" to "human_input". Explain why it failed in the "answer" field, provide suggestions, and wait for user response.
+                    - If successful and results are more than 0, place the final tested query in "answer_retrieval_query". 
+                    - Do not use "LIMIT" unless needed to answer the question.
+
+                    Requirements for the visualization query:
+                    - Include ctids in the SELECT clause.
+                    - Only provide a visualization query if the answer_retrieval_query returns results (non-empty).
+                    - The query should be specific to the rows that answer the question.
+                    - If aggregation is needed, ensure all non-aggregated columns are in the GROUP BY clause.
+                    - Typically select the whole row (ctid, *), or select just ctid plus relevant columns.
+
+                    Label the visualization query (max 7 words), e.g. "Select all cars", "Select running totals", etc.
+
+                    Return the following JSON exactly (fill in the fields accordingly, no extra fields):
+
+                    {{
+                    "current_agent": "sql_agent",
+                    "next_agent": "__end__ if query yields non-empty results, else 'human_input'",
+                    "question": "None",
+                    "answer": "<_START_> Explanation of why this query is best, or explanation of failure. <_END_>",
+                    "query_type": "retrieval",
+                    "answer_retrieval_query": "The final tested retrieval query",
+                    "visualize_retrieval_query": "Query for visualization (if any)",
+                    "visualize_retrieval_label": "A label describing the visualization query"
+                    }}
+                    """
+
+    return prompt_template
 
 
-pdf_agent_prompt_a =  """
-                Given the following extracted parts of a pdf document and a question, create a answer with references ("sources"). 
+
+async def create_sql_manipulation_prompt(question: str, last_message: list):
+    prompt_template = f"""
+        You are a SQL specialist who can write SQL queries to modify the database. Use delimiting or other forms of string concatenation on extracted data from the database in the perform_manipulation_query. Do not worry about being unable to modify the database yourself, focus on writing queries that the user can execute.
+        Important: Verify the query is syntactically correct.
+
+        The user's intial question is: {question}
+        Users last message: {last_message}
+
+        1   The **perform_manipulation_query** should help the user modify the data of the database. Place the final modification query in the 'perform_manipulation_query' fields.
+            -   Make sure to query the database to understand the relevent data so that you can use it to formulate perform_manipulation_query. 
+            -   If needed, try to make the query capable of acheiving multiple tasks in a single query. .
+            -   Do not run perform_manipulation_query to alter the database, but you can run queries to look at the database. Do not let the user know that you cannot run the query to alter the database.
+            -   If you created a usable perform_manipulation_query, re-check the query to make sure the syntax is correct. If the query is correct then set 'query_type' to 'manipulation' and 'next_agent' to '__end__'.
+            -   Do not concern yourself with if the query is consequential or not. Your job and priority is to write a query.
+
+        2   Label perform_manipulation_query based on its purpose (max 7 words). Place the label in the 'perform_manipulation_label' field.
+
+        If you absolutly need more information to write the query, then set 'next_agent' to 'human_input' and in the 'answer' field provide: an explanation of what the problem is, suggestions based on the data of the table, and then wait for the user's response.
+
+        Return in JSON format: 
+        {{
+            "current_agent": "sql_agent", 
+            "next_agent": "__end__ or 'human_input'", 
+            "question": "None",
+            "answer": "<_START_> Description of created query and why its the best query to manipulate the database. If you could not create a manipulation query, explain the reason why in detail and wait for the user to respond <_END_>",
+            "query_type": "manipulation",
+            "perform_manipulation_query": "Query that alters the database or data",
+            "perform_manipulation_label": "label that describes the perform_manipulation_query",       
+        }}
+        """
+    
+    return prompt_template
+
+
+
+
+PDFAGENTPROMPTTEMPLATE_A = PromptTemplate(
+    template=   """
+                user,
+                You are an information gatherer for a pdf document. Given the following extracted parts of a pdf document and a question:
+                1. Gather any fundamental information that is relevant to the question (e.g., addresses, dates, values, events). 
+                2. Place all relevant information in the 'answer' field including useful data points.
+                3. Place the most relevant data points from the pdf in the 'data_points' field without any other text. Use commas to separate data points. For example: Phone numbers, emails, addresses, dates, etc.
+                4. Place the most relevant page number and line number in the 'sources' field. Use commas to separate sources. For example: Page 1, Line 1, Page 2, Line 2, etc.
+
                 If you don't know the answer, just share information that may be relevant to the question such as supporting details or background information that could help the user.
-                Ensure that the answer starts "<_START_>" and ends with "<_END_>".
+
                 QUESTION: {question}
                 =========
                 {summaries}
                 =========
-                answer: 
-                sources:
-        """
-PDFAGENTPROMPTTEMPLATE_A = PromptTemplate(template=pdf_agent_prompt_a, input_variables=["summaries", "question"])
-
-class PDF_KG_RETRIEVE_TEMPLATE(BaseModel):
-    answer: str = Field(description="your answer to the question as it stands with <_START_> in the beginning and <_END_> at the end")
-    sources: str = Field(description="References to the source of info from the pdf")
-    data_points: str = Field(description="Data points from the pdf")
-
-parser = JsonOutputParser(pydantic_object=PDF_KG_RETRIEVE_TEMPLATE)
+                Respond using JSON format: {format_instructions}
+                """,
+            input_variables=["summaries", "question", "format_instructions"])
 
 
-pdf_agent_prompt_b = """
+PDFAGENTPROMPTTEMPLATE_B = PromptTemplate(
+    template=   """
                 user,
                 You are an information gatherer for a pdf document. Given the following extracted parts of a PDF document (called 'summaries'), a question and columns from a table (called 'columns') your task is:
                 1. Gather any fundamental information that is relevant to the question (e.g., addresses, dates, values, events). 
-                2. When looking for information in the PDF, try to find data specific to the columns that the user asks for.
-                3. Cite where you found each piece of information, using references in the 'sources' field.
-                4. Place all relevent information in the 'answer' field including useful data points. Do not be stingy with information, more is better.
-                5. Place the most relevent data points in the data_points field without any other text. Use commas to separate data points. For example: Phone numbers, emails, addresses, dates, etc.
+                2. When looking for information in the PDF, find data points specific to the columns in the table. 
+                3. Rank the data points based on how they can narrow down the answer, for example: h2o is more specific than water, phone number is more specific than full name, etc
+                4. Place all relevent information in the 'answer' field including useful data points. Address if the table can provide the answer if the data points are used in a database query.
+                5. Place the data points from the pdf in the 'data_points' field without any other text. Use commas to separate data points and order the data points by most specific to least specific.
 
                 question: {question}
                 columns: {columns}
                 =========
                 {summaries}
                 =========
-                answer: see {format_instructions}
-                """
-
-PDFAGENTPROMPTTEMPLATE_B = PromptTemplate(template=pdf_agent_prompt_b, input_variables=["summaries", "question", "columns"], partial_variables={"format_instructions": parser.get_format_instructions()})
-
-
-row_retrieval_prompt = """
-                user,
-                You are an information gatherer for a Table. Given the provided 'question' which is essentially a value and the extracted parts of a table called 'summaries', let me know what valuess are the closest. 
-                It can be one or more. The question is vague, so you should make best effort to retreive the most similar values. You can split the 'question' into multiple parts and look through various columns. 
-                For example, if you get a value like 'Bread, cheese, and milk', you can look through the columns for 'Bread', 'cheese', and 'milk' separately. 
-                Return the value sand the respective column names in the 'answer' field.
-                question: {question}
-                =========
-                {summaries}
-                =========
-                answer:
-                sources:
-        """
-
-ROWDATAAGENTPROMPTTEMPLATE = PromptTemplate(template=row_retrieval_prompt, input_variables=["summaries", "question"])
-
-CALLTOOLSPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
-        ("system",
-        "You are an helpful assistant\n"
-        "Answer the user's question by using your tool calls.\n\n"
-        "The user's question:\n{question}"
-        "Always respond in json format:\n"
-        "{{\"question\": \"question for tool\", \"answer\": \"Response from tool\"}}\n\n")
-    
-])
-
-DATAANALYSTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
-(
-        "system",
-        "You are an helpful guide for a table named {table_name} and a PDF document named {pdf_name}.\n"
-        "Your goal is to answer the user's question by using the information from the table and the pdf. If the qustion is not specific to the contents of the table, then find a way to use the data from the table in your answer.\n"
-        "Important: Use agent_step {agent_step} to track the correct step. Always verify the current state of agent_step. Always pay attention to the agent_step in the conversation as it will guide you to the correct step.\n\n"
-        "The columns names for the table are {columns_and_types}.\n\n"
-        "The agent_scratchpads can be used by agents to store information from the previous step. Here is the agent_scratchpads: {agent_scratchpads}.\n\n"
-        "The conversation so far:\n{user_message}\n\n"
-        
-        "**Steps:**\n"
-        "If agent_step is 1, Identify what information is needed to answer the question (e.g., Who, Where, When). Expand or refine the question accordingly, and place your augmented question in the 'question' field.\n"
-        "   - For instance, if the user asks: \"What’s a good hotel near JFK airport?\"\n"
-        "     - Augment the question set to include: \"What is the address of JFK airport?\"\n"
-        "       \"Which hotels are located near the address of JFK airport?\"\n"
-        "       \"Are there hotels in the area of JFK airport?\"\n"
-        "   - Once you have your augmented or refined set of questions, set `next_agent` to `pdf_agent`.\n\n"
-
-        "If agent_step is 2, Identify what information from the columns of the table can aid in answering the question or strengthening the already existing answer from the previous step.\n"
-        "   - Augment the question with this information. Get creative if you see that the question is not specific to the contents of the table.\n"
-        "   - Place the updated question, along with any relevant information from agent_scratchpads, in the 'question' field. Set `next_agent` to `sql_agent`.\n\n"
-
-        "If agent_step is 3, then an error was raised. Please let the user know the query that caused the error, augment the question to widen the scope of the query, and place your augmented question in the 'question' field. Set `next_agent` to `sql_agent` . You can see the error message in the agent_scratchpads field.\n\n"
-        
-        "If agent_step is 4 , place your answer in the 'answer' field and set `next_agent` to `__end__`. You can see the answer in the agent_scratchpads field.\n\n"
-
-        "Always respond in json format:\n"
-            "{{\"current_agent\": \"data_analyst\",\"next_agent\": \"agent name which is either pdf_agent, sql_agent or __end__\", \"question\": \"augmented question for agents and sql queries(if applicable)\", \"answer\": \" <_START_> agent_step and the Description of current step or final answer <_END_> \", \"is_multiagent\": \"True if routing to another agent, and false if routing to __end__\", \"step\": \"{agent_step}\"}}\n\n")
-        ])
+                Respond using JSON format: {format_instructions}
+                """, 
+            input_variables=["summaries", "question", "columns", "format_instructions"])
 
 
-DATAANALYSTMULTIAGENTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
-(
-        "system",
-        "You are an helpful guide for a table named {table_name} and a PDF document named {pdf_name}.\n"
-        "Your goal is to answer the user's question by using the information from the table and the pdf.\n"
-        "The columns names for the table are {columns_and_types}.\n\n"
-        "The agent_scratchpads contains information retreived from the pdf and the table. Here is the agent_scratchpads: {agent_scratchpads}.\n\n"
 
-        "The question is:\n{question}\n\n"
-        
-        "**Steps:**\n"
-        "1. Identify at a fundamental level, the information that is needed to answer the question (e.g., Who, Where, When).\n"
-        "2. Look at the column names and consider if the table could give you the particular info to answer the question\n"
-        "3. If the answer can be found in the table using a query, then augment the question and set `next_agent` to `sql_agent`, otherwise set `next_agent` to `__end__`.\n"
-            "- Augment the question with information derived from the pdf and the most relevant columns and values of the table in the agent_scratchpads.\n"
 
-        "Always respond in json format:\n"
-            "{{\"current_agent\": \"data_analyst\",\"next_agent\": \"__end__\", \"question\": \"Initial question\", \"augmented_question\": \"augmented question\", \"answer\": \" <_START_> What you think is needed to answer the question <_END_> \", \"is_multiagent\": \"True if routing to another agent, and false if routing to __end__\", \"step\": \"current step number \"}}\n\n")
-        ])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 SQLAGENTMULTIAGENTPROMPTTEMPLATE = f"""
@@ -245,3 +309,51 @@ SQLAGENTPROMPTTEMPLATE = f"""
 
                     2   Label the query based on its purpose (max 7 words). Place the label in the 'perform_manipulation_label' field.
         """
+
+
+
+TABLEONLYPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
+        ("system",
+        "You are the supervisor of a conversation about a table that goes by {table_name}. Never make assumptions about the content of the table based on the name of the table as a bananas column can exist in the table. Ensure that all decisions are based on facts from queries or from the other agents."
+        "Your tasks are:\n\n"
+        "1. If a few database queries are needed to answer the user's question, then route the question to `sql_agent`. DO not make assumptions.\n\n"
+        "2. If the qustion from the user is about manipulating the data in the table, then route the question to `sql_manipulator_agent`.\n\n"
+        "3. If no database query or deeper analysis is needed, set the next_agent to '__end__' and answer the question.\n\n"
+        "4. If nessecary, look through {conversation_history} to look at previous messages for context.\n\n"
+        "5. If the question has nothing to do with the {table_name} or if {table_name} is None table, set the next_agent to '__end__' and explain why. Never assueme anything about the table"
+        "the question is unrelated.\n\n"
+        "Return in json format:\n"
+        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer to question or the step being taken to answer the question <_END_>\", \"answer_retrieval_query\": The previously created sql_agent query(with the ctid) or an empty string. Only use when retrieving answer from conversation_history.\", \"viewing_query_label\": The previously created sql_agent query(with the label) or an empty string.\"}}\n\n"
+        "The user's last request:\n{user_message}")
+    ])
+
+
+TABLEANDPDFPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
+        ("system",
+        "You are the supervisor of a conversation about a table that goes by {table_name} and a pdf that goes by {pdf_name}.\n\n"
+        "Route the question to `data_analyst`\n\n"
+        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer or the step being taken to answer the question <_END_>\"}}\n\n"
+        "The user's last request:\n{user_message}")
+    ])
+
+
+PDFONLYPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
+        ("system",
+        "You are the supervisor of a conversation about a pdf document that goes by {pdf_name}.\n\n" 
+        "Never make assumptions about the content of the pdf.\n\n"
+        "Simply let the user know that you can route the question to `pdf_agent` who can answer the question.\n\n"
+        "Return in json format and set the next_agent to 'pdf_agent':\n"
+        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
+        "The user's last request:\n{user_message}" )
+    ])
+
+
+NEITHERTABLEORPDFPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
+        ("system",
+        "You are the supervisor of a conversation about the data in csv tables and pdf documentations.\n\n"
+        "The user has  not selected a table or pdf yet. Never make assumptions about the content of the table or pdf.\n\n"
+        "Simply let the user know that you do not have access to the tables or pdfs and ask them to select a table and/or pdf.\n\n"
+        "Return in json format and set the next agent to '__end__:\n"
+        "{{\"current_agent\": \"supervisor\", \"next_agent\": \"agent_name\", \"question\": \"question_text\", \"answer\": \"<_START_> answer_text <_END_>\"}}\n\n"
+        "The user's last request:\n{user_message}")
+    ])

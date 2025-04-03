@@ -1,28 +1,3 @@
-# Recommended Enhancements
-# Handle Missing Keys
-
-# Replace all direct indexing of time_table[str(...)] with time_table.get(str(...), 0) or something similar.
-# Remove Duplicate handle_on_chat_model_stream
-
-# You have two definitions. The first is overshadowed by the second that includes time_table. Remove the first if it’s not used.
-# Initialize next_agent and time_table
-
-# In run_chatbots, define next_agent = None and time_table = {} near the top so that you don’t reference them before assignment.
-# If you rely on time_table, store an initial time for each agent if needed or rely on a .get(..., time.time()) fallback.
-# Refine Interrupt Logic (Optional)
-
-# Currently, if multiple interrupts queue up quickly, you only handle them one at a time. That might be acceptable, but if you want the user to be able to spam interrupts, you may want to handle them differently.
-# Remove or Replace Blank Messages
-
-# You send "" for start_next_agent_stream(...) with an empty string. If you don’t want a blank message in the UI, consider replacing with a “Thinking…” placeholder or removing it if not needed.
-# Consolidate Logging
-
-# You have a mix of logging.debug(...) and rprint(...). That’s fine for debugging, but in a production environment, you might want all logs to go through a consistent logging approach.
-# Docstrings
-
-# Most handlers have docstrings. Great. The main run_chatbots function also has a docstring, but you can further detail how interrupt logic works, what time_table is for, etc.
-
-
 import os
 import time
 from langgraph.checkpoint.memory import MemorySaver
@@ -30,14 +5,13 @@ from langgraph.types import Command
 import logging
 from rich import print as rprint
 from config import LoadPostgresConfig
-from llm_core.src.llm.langgraph_graph_api import workflow, workflow_sql, workflow_pdf, workflow_multi
+from llm_core.src.llm.langgraph_graph_api import workflow_sql, workflow_pdf, workflow_multi
 from llm_core.src.llm.agents import *
 from llm_core.src.utils.utility_function import *
 from llm_core.src.utils.chatbot_manager import ChatbotManager
-from llm_core.src.llm.input_layer import  set_chat_state, set_sql_chat_state, set_pdf_chat_state
+from llm_core.src.llm.input_layer import  set_chat_state
 from llm_core.src.llm.output_layer import start_next_agent_stream, char_agent_stream, end_agent_stream, usage_agent_stream, query_agent_stream
 from models.models import MessageInstance
-from llm_core.src.llm.function_layer import sql_agent_function
 from typing import Tuple, List
 import asyncio
 
@@ -62,23 +36,19 @@ async def run_chatbots(session_id: str):
     thread_id = config['configurable']['thread_id']
     chat_state = chatbot["messages"]
     user_selected_component = None
-    # table_name = chatbot["table_name"]
-    # pdf_name = chatbot["pdf_name"]
 
     while True:
         try:
             # Wait for a new message (blocking until available)
             message = await message_queue.get()
-            rprint(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
+
             if message.table_name and not message.pdf_name:
                 user_selected_component = "sql"
-                # rprint("Running SQL Workflow: ", message.table_name)
-                # rprint("chat_state: ", chat_state[thread_id])
                 app = workflow_sql.compile(checkpointer=memory)
                 if chat_state[thread_id][message.table_name] == None:
-                    state = await set_sql_chat_state(manager, session_id, message)
+                    state = await set_chat_state(manager, session_id, message)
+                    state["next_agent"] = "sql_agent"
                     chat_state[thread_id][message.table_name] = state
-                    # rprint("Intializing table state: ", chat_state[thread_id])
                 else:
                     state = chat_state[thread_id][message.table_name]
                     state["question"] = HumanMessage(content=message.message)
@@ -86,14 +56,11 @@ async def run_chatbots(session_id: str):
             
             elif message.pdf_name and not message.table_name:
                 user_selected_component = "pdf"
-                rprint("Running PDF Workflow: ", message.pdf_name)
-                # rprint("Running SQL Workflow: ", message.pdf_name)
-                # rprint("chat_state: ", chat_state[thread_id])
                 app = workflow_pdf.compile(checkpointer=memory)
                 if chat_state[thread_id][message.pdf_name] == None:
-                    state = await set_pdf_chat_state(manager, session_id, message)
+                    state = await set_chat_state(manager, session_id, message)
+                    state["next_agent"] = "pdf_agent"
                     chat_state[thread_id][message.pdf_name] = state
-                    # rprint("Intializing pdf state: ", chat_state[thread_id])
                 else:
                     state = chat_state[thread_id][message.pdf_name]
                     state["question"] = HumanMessage(content=message.message)
@@ -102,28 +69,9 @@ async def run_chatbots(session_id: str):
             elif message.table_name and message.pdf_name:
                 user_selected_component = "multi"
                 app = workflow_multi.compile(checkpointer=memory)
-                if chat_state[thread_id][message.table_name] == None:
-                    state = await set_sql_chat_state(manager, session_id, message)
-                    chat_state[thread_id][message.table_name] = state
-                
-                if chat_state[thread_id][message.pdf_name] == None:
-                    state = await set_pdf_chat_state(manager, session_id, message)
-                    chat_state[thread_id][message.pdf_name] = state
-                
-                rprint("Running Multiagent Workflow: ", chat_state[thread_id])
                 state = await set_chat_state(manager, session_id, message)
-            
-            # if message.pdf_name and chat_state[thread_id][message.pdf_name] == None:
-            #     state = await set_chat_state(manager, session_id, message)
-            #     chat_state[thread_id][message.pdf_name] = state
-            #     rprint("Intializing pdf state: ", chat_state[thread_id])
-            # elif message.pdf_name and not message.table_name:
-            #     state = chat_state[thread_id][message.pdf_name]
-            #     rprint("loading prior pdf state: ", chat_state[thread_id])
-
-            # if message.pdf_name and message.table_name:
-            #     table_state = chat_state[thread_id][message.table_name]
-            #     pdf_state = chat_state[thread_id][message.pdf_name]
+                state["next_agent"] = "data_analyst"
+                state["is_multiagent"] = True
 
             is_interrupted = False
             traversing_graph = True
@@ -138,7 +86,6 @@ async def run_chatbots(session_id: str):
         
 
             while traversing_graph:
-                # Human-in-loop flag
                 if is_interrupted:
                     message = await message_queue.get()
                     rprint("Processing interrupted message: ", message)
@@ -151,8 +98,6 @@ async def run_chatbots(session_id: str):
 
                 async for event in app.astream_events(input_arg, config, version="v2"):
                     if event["event"] == "on_chain_start":
-                        # if "run_id" in event:
-                        #     rprint("on_chain_start: ", event["run_id"], cur_agent)
                         cur_agent, next_agent = await handle_on_chain_start(
                             event, 
                             manager, 
@@ -178,9 +123,7 @@ async def run_chatbots(session_id: str):
                         )
                         
                     if event["event"] == "on_chat_model_end":
-                        # rprint("on_chat_model_end: ", event)
                         if "run_id" in event:
-                            # rprint("on_chat_model_end: ", event["run_id"], cur_agent)
                             tool_call_name = ""
                             if "tool_calls" in event["data"]["output"].additional_kwargs:
                                 tool_call_name = event["data"]["output"].additional_kwargs["tool_calls"][0]["function"]["name"]
@@ -191,13 +134,10 @@ async def run_chatbots(session_id: str):
                             total_tokens = event["data"]["output"].usage_metadata["total_tokens"]
                             run_id = event["run_id"]
                             tokens = [input_tokens, output_tokens, total_tokens, run_id, tool_call_name, model_name]
-                            # rprint("Tokens: ", tokens)
 
                             await handle_on_chat_model_end(event, manager, session_id, active_websockets, tokens, cur_agent)
 
                     if event["event"] == "on_chain_end" and not is_interrupted:
-                        # if "run_id" in event:
-                        #     rprint("on_chain_end: ", event["run_id"], cur_agent)
                         traversing_graph, end_state = await handle_on_chain_end(config, event, 
                             manager, 
                             session_id, 
@@ -207,8 +147,6 @@ async def run_chatbots(session_id: str):
                         if end_state and user_selected_component == "sql":
                             last_message = end_state["messages"][-1]
                             chat_state[thread_id][message.table_name]["messages"].append(last_message)
-                            # rprint("last_message: ", last_message)
-                            # rprint("State + last_message: ", chat_state[thread_id])
                         if not traversing_graph:
                             break
 
@@ -217,14 +155,10 @@ async def run_chatbots(session_id: str):
                         for t in interrupts.tasks:
                             if t.interrupts:
                                 is_interrupted = True
-                                if is_interrupted and user_selected_component == "sql":
-                                    rprint("Interrupted!")
-                                    # rprint("Interrupts: ", interrupts)
-                                    # chat_state[thread_id][message.table_name]["agent_step"] = 3
+                                # if is_interrupted and user_selected_component == "sql":
+                                #     rprint("Interrupted!")
                                 break
                     else:
-                        # rprint("Interrupted: ", is_interrupted)
-                        # rprint("Interrupts: ", interrupts)
                         if len(interrupts.tasks) == 0:
                             is_interrupted = False
 
@@ -253,7 +187,9 @@ async def handle_on_chat_model_end(event: dict,
     current_time = end_time - time_table.get(str(role), 0)
     message = await usage_agent_stream(manager, session_id, usage_metadata, role, current_time)
     message = MessageInstance(**message)
+    # rprint("message: ", message)
     await safe_send(active_websockets, message, session_id)
+
 
 async def handle_on_chain_start(
     event: dict,
@@ -342,23 +278,21 @@ async def handle_on_chat_model_stream(
     str_response: List[str],
     char_backlog: List[str],
     time_table: dict
+    
 ) -> Tuple[str, bool, List[str], List[str]]:
-    # if len(event['data'].keys()) > 1:
-    #     rprint("handle_on_chat_model_stream event key: ", event['data'].keys())
     
     prev_char_backlog = char_backlog.copy()
 
     word_buffer, word_state, str_response, char_backlog = process_stream_event(
         event, words_to_find, word_buffer, word_state, str_response, char_backlog
     )
-
+    
     if word_state and len(str_response) > 0 and prev_char_backlog == char_backlog:
         role = event['metadata']['langgraph_node']
         end_time = time.time()
         current_time = end_time - time_table.get(str(role), 0)
         message = await char_agent_stream(manager, session_id, word_buffer, role, current_time)
         message = MessageInstance(**message)
-
         await safe_send(active_websockets, message, session_id)
 
     return word_buffer, word_state, str_response, char_backlog

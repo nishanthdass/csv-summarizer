@@ -247,7 +247,7 @@ export const ChatWebsocketProvider: React.FC<ChatWebsocketProviderProps> = ({ ur
       const lastMessage = updatedMessages[updatedMessages.length - 1];
       // console.log("lastMessage: ", lastMessage);
 
-      if (lastMessage.message.endsWith("\n")) {
+      if (lastMessage.message.endsWith("\n")&& lastMessage.role === 'data_analyst') {
         // start a new message
         updatedMessages.push({
           ...lastMessage,

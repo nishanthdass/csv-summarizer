@@ -19,8 +19,6 @@ openai_var  = LoadOpenAIConfig()
 postgres_var = LoadPostgresConfig()
 
 
-
-
 async def call_sql_agent(prompt:str, state: MessageState) -> MessageState:
     """Call the SQL Agent langchain toolkit."""
     model = ChatOpenAI(model=openai_var.openai_model, stream_usage=True,temperature=0.1)
@@ -85,7 +83,7 @@ def kg_retrieval_chain(prompt, input_variables):
         input_variables,
         return_only_outputs=True,
         )
-    rprint(answer["answer"])
+
     return answer
 
 

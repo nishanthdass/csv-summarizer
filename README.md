@@ -38,14 +38,14 @@ pip install -r requirements.txt
 ```
 
 ### 6. Create the .env File
-In the project’s root directory, create a file named .env with the following keys:
+In the project’s root directory, create a .env file with the following keys:
 
 - PostgreSQL database configuration\
 POSTGRES_USER=\
 POSTGRES_PASSWORD=\
-POSTGRES_DB=&nbsp; #database name\
+POSTGRES_DB= &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; # database name\
 POSTGRES_HOST=\
-POSTGRES_PORT=\
+POSTGRES_PORT=
 
 - OpenAI API configuration\
 OPENAI_API_VERSION="2024-05-01-preview"\
@@ -53,17 +53,17 @@ OPENAI_MODEL_NAME="gpt-4-turbo-preview"\
 OPENAI_EMB_MODEL="text-embedding-3-large"\
 OPENAI_EMB_MODEL_SMALL="text-embedding-3-small"\
 OPENAI_API_KEY=\
-OPENAI_BASE_URL="https://api.openai.com/v1/"\
+OPENAI_BASE_URL="https://api.openai.com/v1/"
 
 - API keys for Langchain\
 LANGCHAIN_API_KEY=\
-LANGCHAIN_TRACING_V2=true\
+LANGCHAIN_TRACING_V2=true
 
 - Neo4j graph database configuration\
-NEO4J_URI=&nbsp;# e.g., "neo4j+s://your-instance.databases.neo4j.io"\
+NEO4J_URI= &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; # e.g., "neo4j+s://your-instance.databases.neo4j.io"\
 NEO4J_USERNAME=\
 NEO4J_PASSWORD=\
-NEO4J_DATABASE=\
+NEO4J_DATABASE=
 
 # Starting the backend
 Follow these steps to start the FastAPI server

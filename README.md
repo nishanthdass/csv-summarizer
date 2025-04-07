@@ -1,4 +1,5 @@
-# Environment Setup
+----
+# **Environment Setup**
 
 Follow these steps to set up the environment for the **SQL With GenAI** project.
 
@@ -65,7 +66,9 @@ NEO4J_USERNAME=\
 NEO4J_PASSWORD=\
 NEO4J_DATABASE=
 
-# Starting the backend
+----
+
+# **Starting the backend server**
 Follow these steps to start the FastAPI server
 
 ### 1. Navigate to the Main Directory
@@ -89,8 +92,9 @@ cd backend
 uvicorn main:app --reload
 ```
 
+----
 
-# Starting the Frontend
+# **Starting the frontend server**
 Follow these steps to start the React UI
 
 ## Prerequisites
@@ -114,3 +118,4 @@ npm install
 ```bash
 npm start
 ```
+---

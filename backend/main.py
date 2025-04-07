@@ -9,7 +9,7 @@ import os
 
 load_dotenv()
 
-SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "default-secret-key")
+SESSION_SECRET_KEY = "b8ea5b70-1f09-41ae-b057-ffec3958f1f6"         # Replace with your own secret key
 
 app = FastAPI()
 

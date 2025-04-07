@@ -19,7 +19,6 @@ router = APIRouter()
 db = LoadPostgresConfig()
 
 
-
 @router.post("/upload", status_code=200)
 async def upload_file(file: UploadFile = File(...)):
     """

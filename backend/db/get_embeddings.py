@@ -10,6 +10,7 @@ from fastapi import HTTPException
 import sys
 import ast
 from db.db_utility import get_all_columns_and_types_tuple
+import psycopg2
 
 
 db = LoadPostgresConfig()
@@ -64,9 +65,6 @@ def insert_word_embedding_to_db(word: str, embedding: str):
     try:
         conn = db.get_db_connection()
         cur = conn.cursor()
-
-        # Create embedding for the word
-        # embedding = create_embedding_for_word(word)
 
         cur.execute(
             "INSERT INTO english_dict_openai_small (word, embedding) VALUES (%s, %s)",
@@ -155,7 +153,6 @@ def add_to_embedding_dict(input_string: str, table_name: str):
 
 
 def create_embedding_for_word(word: str):
-
     # Create embedding for the word
     embeddings = OpenAIEmbeddings(
     model="text-embedding-3-large",
@@ -216,9 +213,8 @@ def process_string_return_similarity(input_string: str, table_name: str):
                     })
 
     result_array.sort(key=lambda x: x['similarity'], reverse=True)
-
-
     return result_array
+
 
 def get_similar_rows(table_name: str, words: str):
     """Get similar rows from table based on word and levenshtein distance. 
@@ -272,7 +268,6 @@ def get_similar_rows(table_name: str, words: str):
     return sorted_results
 
 
-
 def remove_duplicate_dicts(similar_rows):
     seen = set()
     unique_rows = []
@@ -285,18 +280,37 @@ def remove_duplicate_dicts(similar_rows):
             
     return unique_rows
 
+
+def get_all_columns_and_types_tuple(table_name):
+    try:
+        connection = db.get_db_connection()
+        cur = connection.cursor()
+
+        # Get primary key column(s)
+        cur.execute(f"""
+            SELECT a.attname
+            FROM   pg_index i
+            JOIN   pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+            WHERE  i.indrelid = '{table_name}'::regclass AND i.indisprimary;
+        """)
+        primary_keys = {row[0] for row in cur.fetchall()}
+    
+        # Get all columns excluding 'embedding' and primary keys
+        cur.execute(f"""
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name = %s
+              AND column_name != 'embedding';
+        """, (table_name,))
+        all_columns = cur.fetchall()
         
+        filtered_columns = [(col, dtype) for col, dtype in all_columns if col not in primary_keys]
 
+        cur.close()
+        connection.close()
 
+        return filtered_columns
 
-# if __name__ == "__main__":
-#     words = ['602', 'Surf', 'Avenue', 'Brooklyn', 'New', 'York', '11224', 'rating', 'rating_count', 'price_category', 'address', 'zipcode']
-#     table_name = 'google_maps_restaurants_shortened_2'
-#     if len(sys.argv) > 1:
-#         function_name = sys.argv[1]
-#         if function_name == "get_similar_rows":
-#             get_similar_rows(table_name, words)
-#         else:
-#             print(f"Function '{function_name}' not found.")
-#     else:
-#         print("Usage: python script.py <function_name>")
+    except psycopg2.DatabaseError as e:
+        print(f"Error: {str(e)}")
+        return []

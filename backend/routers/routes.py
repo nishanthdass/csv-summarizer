@@ -31,8 +31,6 @@ async def upload_file(file: UploadFile = File(...)):
         ingest_pdf_into_postgres(file)
 
 
-
-# Refactor to send table_name via Request
 @router.delete("/delete-file", status_code=204)
 async def delete_table(table: TableNameRequest , request: Request):
     table_name = table.table_name
@@ -50,7 +48,6 @@ async def delete_table(table: TableNameRequest , request: Request):
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete table")
-
 
 @router.get("/get-tables", status_code=200)
 async def get_table_files(request: Request):

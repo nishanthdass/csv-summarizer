@@ -2,6 +2,8 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 from langchain_neo4j import Neo4jGraph
+from neo4j.debug import watch
+
 
 load_dotenv()
 
@@ -35,6 +37,9 @@ class LoadPostgresConfig:
         except psycopg2.DatabaseError as e:
             print(f"Error establishing database connection: {str(e)}")
             raise
+        
+    def get_db_url(self):
+        return self.db_url
 
     def close_db_connection(self, connection):
         """

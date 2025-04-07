@@ -1,5 +1,7 @@
 from fastapi import HTTPException, UploadFile
+from langchain_core.documents import Document
 import pandas as pd
+import psycopg2
 import re
 import os
 from config import LoadPostgresConfig
@@ -9,23 +11,13 @@ import shutil
 import pymupdf
 from rich import print as rprint
 import sys
+from langchain_postgres import PGVector
+from langchain_openai import OpenAIEmbeddings
+from llm_core.config.load_llm_config import LoadOpenAIConfig
 
 task_completion_status = {}
 db = LoadPostgresConfig()
-
-
-# async def poll_completion_and_load_data(table_name, workplace):
-#     # Polling loop to check completion
-#     while not task_completion_status.get(table_name, False):
-#         print("Polling for completion...")
-#         await asyncio.sleep(1)  # Check every second
-
-#     # Task complete, call `load_summary_data`
-#     try:
-#         await workplace.load_summary_data(table_name)
-
-#     except Exception as e:
-#         return {"detail": f"An error occurred while fetching summary data: {str(e)}"}
+openai_var  = LoadOpenAIConfig()
 
 
 def run_query(table_name: str, query: str, role: str, query_type: str):
@@ -121,16 +113,9 @@ def get_all_columns_and_types_tuple(table_name):
     return filtered_columns
 
 
-
-
 def get_all_columns(table_name):
     conn = db.get_db_connection()
     cur = conn.cursor()
-
-    # Get primary key column(s)
-
-
-
 
 
 def get_table_data(table_name: str, page: int, page_size: int):
@@ -234,6 +219,7 @@ def ingest_csv_into_postgres(file: UploadFile):
     Ingests the CSV file into a PostgreSQL table.
     This assumes the table does not exist and needs to be created.
     """
+    
     file_name = file.filename
     file_load = file.file
     table_name = re.sub(r'\.csv$', '', file_name)
@@ -306,34 +292,75 @@ def ingest_csv_into_postgres(file: UploadFile):
         print(f"Error adding embedding column to table {table_name}: {str(e)}")
         conn.rollback()
 
-    # try:
-    #     # get all rows
-    #     cur.execute(f"SELECT * FROM {table_name};")
-    #     rows = cur.fetchall()
-    #     # loop through rows
-    #     for i in range(len(rows)):
-    #         # join all items into a string
-    #         row_string = " ".join(str(item) for item in rows[i] if item != rows[i][0])
-    #         rprint(row_string)
-    #         # create embedding
-    #         embedding = create_embedding_for_line(row_string)
-    #         # update embedding in table
-    #         cur.execute(f"UPDATE {table_name} SET embedding = %s WHERE id = %s", (embedding, rows[i][0]))
-    #         conn.commit()
-
-    
-    # except Exception as e:
-    #     print(f"Error getting rows from table {table_name}: {str(e)}")
-    #     conn.rollback()
+    try:
+        create_embeddings_via_langchain(table_name)
+    except Exception as e:
+        print(f"Error creating embeddings for table {table_name}: {str(e)}")
 
     finally:
         cur.close()
         conn.close()
         db.close_db_connection(conn)
+
+
+def create_embeddings_via_langchain(table_name: str):
+    docs = get_langchain_doc(table_name)
+
+    collection_name = table_name + "_collection"
     
+    embeddings = OpenAIEmbeddings(
+        openai_api_key=openai_var.openai_api_key,
+        openai_api_base=openai_var.openai_endpoint,
+        model=openai_var.openai_embedding_modal_small,
+        dimensions=512
+        )
+
+    vector_store = PGVector(
+        embeddings=embeddings,
+        collection_name=collection_name,
+        connection=db.get_db_url(),
+    )
+
+    id_str = str(table_name) + "_id"
+    rprint(id_str)
+
+    vector_store.add_documents(docs, ids=[doc.metadata[id_str] for doc in docs])
+
+
+def get_langchain_doc(table_name: str):
+    doc = []
+    try:
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+
+        # get all rows
+        cur.execute(f"SELECT * FROM {table_name};")
+        rows = cur.fetchall()
+
+        columns_types = get_all_columns_and_types_tuple(table_name)
+        columns = ["id"] + [col[0] for col in columns_types]
+        def format_row_with_columns(columns, row):
+            return ", ".join([f"The {col} is {val}" for col, val in zip(columns, row)])
+
+        for row in rows:
+            text = format_row_with_columns(columns[1:], row[1:]) 
+            metadata = {str(col): str(val) for col, val in zip(columns, row)}
+            
+            # Add concatenated ID
+            metadata[f"{table_name}_id"] = f"{table_name}_{row[0]}"
+            del metadata["id"]
+
+            doc.append(Document(page_content=text, metadata=metadata))
+
+    except Exception as e:
+        print(f"Error getting rows from table {table_name}: {str(e)}")
+        conn.rollback()
+
+    return doc
+
+
 
 def get_rows_by_id(table_name: str, row_id: int):
-    rprint(f"Getting row from table '{table_name}' with id {row_id}")
     conn = db.get_db_connection()
     cur = conn.cursor()
 
@@ -390,9 +417,6 @@ def ingest_pdf_into_postgres(file: UploadFile):
     page_nums = None
     pdf_obj = process_pdf(pdf_file, complete_path, page_nums, image_output_path, file_name_minus_extension)
 
-    # rprint(pdf_obj)
-    
-    # process_pdf_to_kg(pdf_obj, file_name_minus_extension)
 
     conn = db.get_db_connection()
     cur = conn.cursor()
@@ -409,8 +433,6 @@ def ingest_pdf_into_postgres(file: UploadFile):
         # Create table
         cur.execute(create_table_query)
         conn.commit()
-
-        sanitize_pdf_name = pdf_name.replace('-', '_')
 
         # Add metadata to the table
         cur.execute(f"COMMENT ON TABLE {pdf_name} IS 'source_type: pdf';")
@@ -452,3 +474,4 @@ def convert_postgres_to_react(columns_and_types):
 
     return columns_and_types
 
+       

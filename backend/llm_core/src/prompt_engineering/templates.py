@@ -168,46 +168,46 @@ async def create_sql_manipulation_prompt(question: str, last_message: list):
     return prompt_template
 
 
-
-
 PDFAGENTPROMPTTEMPLATE_A = PromptTemplate(
     template=   """
-                user,
-                You are an information gatherer for a pdf document. Given the following extracted parts of a pdf document and a question:
+                system,
+                You are an information gatherer for a pdf document. Given the following extracted parts of a PDF document (called 'summaries'), a question your task is:
                 1. Gather any fundamental information that is relevant to the question (e.g., addresses, dates, values, events). 
-                2. Place all relevant information in the 'answer' field including useful data points.
-                3. Place the most relevant data points from the pdf in the 'data_points' field without any other text. Use commas to separate data points. For example: Phone numbers, emails, addresses, dates, etc.
-                4. Place the most relevant page number and line number in the 'sources' field. Use commas to separate sources. For example: Page 1, Line 1, Page 2, Line 2, etc.
+                2. Place all relevent information in the 'response' field including useful data points
+                3. Place the data points from the pdf in the 'data_points' field without any other text. Use commas to separate data points and order the data points by most specific to least specific.
+                4. Return a correctly formatted python dictionary
 
-                If you don't know the answer, just share information that may be relevant to the question such as supporting details or background information that could help the user.
-
-                QUESTION: {question}
+                question: {question}
                 =========
                 {summaries}
                 =========
-                Respond using JSON format: {format_instructions}
-                """,
-            input_variables=["summaries", "question", "format_instructions"])
+                Respond using python dictionary:    "response" :  "<_START_> Your complete answer <_END_>", 
+                                                    "data_points": Most relevant data points such as addresses, names, dates, emails, etc", 
+                """, 
+            input_variables=["summaries", "question"])
 
 
 PDFAGENTPROMPTTEMPLATE_B = PromptTemplate(
     template=   """
-                user,
+                system,
                 You are an information gatherer for a pdf document. Given the following extracted parts of a PDF document (called 'summaries'), a question and columns from a table (called 'columns') your task is:
                 1. Gather any fundamental information that is relevant to the question (e.g., addresses, dates, values, events). 
-                2. When looking for information in the PDF, find data points specific to the columns in the table. 
-                3. Rank the data points based on how they can narrow down the answer, for example: h2o is more specific than water, phone number is more specific than full name, etc
-                4. Place all relevent information in the 'answer' field including useful data points. Address if the table can provide the answer if the data points are used in a database query.
-                5. Place the data points from the pdf in the 'data_points' field without any other text. Use commas to separate data points and order the data points by most specific to least specific.
+                2. Look specifically for information related to each column in the table.
+                3. Place all relevent information in the 'response' field including useful data points
+                4. Place the data points from the pdf in the 'data_points' field without any other text. Use commas to separate data points and order the data points by most specific to least specific.
+                5. Place all related column names in 'relevant_columns'. 
+                6. Return a correctly formatted python dictionary
 
                 question: {question}
                 columns: {columns}
                 =========
                 {summaries}
                 =========
-                Respond using JSON format: {format_instructions}
+                Respond using python dictionary:    "response" :  "<_START_> Your complete answer <_END_>", 
+                                                    "data_points": Most relevant data points such as addresses, names, dates, emails, etc", 
+                                                    "relevant_columns": Top 3 most relevant column names seperated by commas" 
                 """, 
-            input_variables=["summaries", "question", "columns", "format_instructions"])
+            input_variables=["summaries", "question", "columns"])
 
 
 

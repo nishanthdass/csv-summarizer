@@ -35,7 +35,6 @@ app.state.task_registry = {}
 
 app.include_router(router)
 
-
 @app.get("/set-session")
 async def set_session(request: Request):
     request.session["user_data"] = {"name": "John Doe", "role": "admin"}

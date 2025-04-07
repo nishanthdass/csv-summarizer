@@ -43,7 +43,7 @@ In the project’s root directory, create a file named .env with the following k
 - PostgreSQL database configuration\
 POSTGRES_USER=\
 POSTGRES_PASSWORD=\
-POSTGRES_DB=               # database name\
+POSTGRES_DB=&nbsp;             # database name\
 POSTGRES_HOST=\
 POSTGRES_PORT=\
 

@@ -40,31 +40,30 @@ pip install -r requirements.txt
 ### 6. Create the .env File
 In the project’s root directory, create a file named .env with the following keys:
 
-- PostgreSQL database configuration
-POSTGRES_USER=
-POSTGRES_PASSWORD=
-POSTGRES_DB=               # database name
-POSTGRES_HOST=
-POSTGRES_PORT=
+- PostgreSQL database configuration\
+POSTGRES_USER=\
+POSTGRES_PASSWORD=\
+POSTGRES_DB=               # database name\
+POSTGRES_HOST=\
+POSTGRES_PORT=\
 
-- OpenAI API configuration
-OPENAI_API_VERSION=        # e.g., "2024-05-01-preview"
-OPENAI_MODEL_NAME=         # e.g., "gpt-4-turbo-preview"
-OPENAI_EMB_MODEL=          # e.g., "text-embedding-3-large"
-OPENAI_EMB_MODEL_SMALL=    # e.g., "text-embedding-3-small"
-OPENAI_API_KEY=
-OPENAI_BASE_URL=           # e.g., "https://api.openai.com/v1/"
+- OpenAI API configuration\
+OPENAI_API_VERSION=        # e.g., "2024-05-01-preview"\
+OPENAI_MODEL_NAME=         # e.g., "gpt-4-turbo-preview"\
+OPENAI_EMB_MODEL=          # e.g., "text-embedding-3-large"\
+OPENAI_EMB_MODEL_SMALL=    # e.g., "text-embedding-3-small"\
+OPENAI_API_KEY=\
+OPENAI_BASE_URL=           # e.g., "https://api.openai.com/v1/"\
 
-- API keys for Langchain
-LANGCHAIN_API_KEY=
-LANGCHAIN_TRACING_V2=true  # Keep this as 'true' to enable Langchain tracing
+- API keys for Langchain\
+LANGCHAIN_API_KEY=\
+LANGCHAIN_TRACING_V2=true  # Keep this as 'true' to enable Langchain tracing\
 
-- Neo4j graph database configuration
-NEO4J_URI=                 # e.g., "neo4j+s://your-instance.databases.neo4j.io"
-NEO4J_USERNAME=
-NEO4J_PASSWORD=
-NEO4J_DATABASE=
-
+- Neo4j graph database configuration\
+NEO4J_URI=                 # e.g., "neo4j+s://your-instance.databases.neo4j.io"\
+NEO4J_USERNAME=\
+NEO4J_PASSWORD=\
+NEO4J_DATABASE=\
 
 # Starting the backend
 Follow these steps to start the FastAPI server

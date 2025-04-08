@@ -14,7 +14,6 @@ import asyncio
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 
-# Create a router object
 router = APIRouter()
 db = LoadPostgresConfig()
 

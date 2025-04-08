@@ -57,8 +57,12 @@ async def json_parser_prompt_chain_data_analyst(inputs):
                         temperature=0 )
     parser = JsonOutputParser(pydantic_object=DataAnalystResponse)
     prompt = create_data_analyst_prompt(format_instructions=parser.get_format_instructions())
+    rprint("prompt: ", prompt)
     chain = prompt | model | parser
+    rprint("chain: ", chain)
     response = await chain.ainvoke(inputs)
+
+    rprint("response: ", response)
 
     return response
 

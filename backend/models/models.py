@@ -1,8 +1,8 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import Optional
 from typing_extensions import Annotated, TypedDict
-from typing import Sequence, Dict, List, Optional
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk
+from typing import Sequence, Optional
+from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
@@ -108,8 +108,10 @@ class Route(BaseModel):
 class DataAnalystResponse(BaseModel):
     """Model for the data analyst's JSON response."""
     current_agent: str = Field(description="data_analyst")
-    next_agent: str = Field(description="'sql_agent' or '__end__'")
+    next_agent: str = Field(description="sql_agent")
     question: str = Field(description="The initial question.")
-    augmented_question: str = Field( description="The augmented question with data points from the table.")
+    augmented_question: str = Field( description="The augmented question with data points from the table_data and pdf_data")
     answer: str = Field( description="<_START_> describe the Data points from the table that can help answer the question <_END_> ")
-    table_data_points: str = Field(description="Top 10 data points from the table that make the question more specific.")
+    table_data_points: str = Field(description="Supporting data that can help write an accurate sql query. More is better")
+
+

@@ -1,30 +1,23 @@
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
 
 def create_data_analyst_prompt(format_instructions):
     prompt_template = PromptTemplate(
     template="""
-            You are a data analyst that deciphers the right information to augment the initial question.
-            Your goal is to augment the question with data points from the table so that a SQL query can be created to answer the question.
+            system,
+            You are a data analyst. Your job is to find relevant table_data that can best help answer the initial question. 
+            Relevant information is table_data that helps reenforce the intial questions with additonal facts.
 
             You are given the following information:
             The initial question is:
             {question}
 
-            The excerpt from the pdf is:
-            {pdf_data}
-
-            The table_data contains column names and their respective values. Here is the table_data:
+            Here is the table_data. The table_data contains column names and their respective values:
             {table_data}
 
-           Steps:
-            1. Augment the question with data from both the pdf_data and the table_data to make the question more specific so that a SQL query can be created. 
-            2. Use the most relevant data points in table_data to enhance the augmented question. Ignore irrelevant data points.
-            2. If a part of the table_data is not in the pdf_data, then add the part of the table_data to the augmented question.
+            Use the pdf_data for more context to the question:
+            {pdf_data}
 
             Follow the ouptut schema below:
             {format_instructions}
@@ -98,8 +91,9 @@ async def create_sql_multiagent_retrieval_prompt(question: str, table_data_point
                     1) An **answer_retrieval_query query** that directly addresses the user's question.
                     2) A **visualization query** to help visualize the results of the answer query.
 
-                    The user's initial question: {question}
-                    Valid Data points from the table (column & value): {table_data_points}
+                    Use the data points to answer the users question: {question}. Valid data points from the table (column & value) are {table_data_points}.
+
+                    Use the data points that can most accurately answer the question. Disregard other datas.
 
                     Requirements for the answer_retrieval_query:
                     - Valid data points are curated from the table data to help you avoid mistakes in your query, use them to correct your query.

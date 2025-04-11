@@ -24,7 +24,7 @@ def build_retrieval_query(pdf_file_name):
         WITH node, closestScore,
              node.blockId     AS nClosestScoreBlockId,
              node.blockNumber AS nClosestScoreBlockNumber,
-             node.chunkSeqId  AS nClosestScoreChunk,
+             node.chunkSeqIndex  AS nClosestScoreChunk,
              node.text        AS nClosestScoreText,
              node.source      AS nClosestScoreSource,
              node.pageNumber  AS nClosestScorePageNumber,

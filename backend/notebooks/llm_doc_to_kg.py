@@ -49,7 +49,7 @@ def param_insert(pdf_as_llm_doc):
             'chapterNumber': pdf_as_llm_doc.metadata['chapter_number'],
             'pageId': pdf_as_llm_doc.metadata['page_id'],
             'blockId': pdf_as_llm_doc.metadata['block_id'],
-            'chunkSeqId': pdf_as_llm_doc.metadata['chunk_seq_id'],
+            'chunkSeqIndex': pdf_as_llm_doc.metadata['chunk_seq_id'],
             'text': pdf_as_llm_doc.page_content
         }
     }
@@ -71,7 +71,7 @@ MERGE (mergedBlock:Block {blockId: $chunkParam.blockId})
         mergedBlock.chapterName = $chunkParam.chapterName,
         mergedBlock.chapterNumber = $chunkParam.chapterNumber,
         mergedBlock.pageId = $chunkParam.pageId,
-        mergedBlock.chunkSeqId = $chunkParam.chunkSeqId,
+        mergedBlock.chunkSeqIndex = $chunkParam.chunkSeqIndex,
         mergedBlock.text = $chunkParam.text
 RETURN mergedBlock
 """
@@ -187,7 +187,7 @@ def match_block_sequence_nodes(page_number, pdf_name):
                 MATCH (from_same_page:Block)
                     WHERE from_same_page.pageNumber = $blockIdParam and from_same_page.pdfFileName = $pageInfoParam
                 WITH from_same_page
-                    ORDER BY from_same_page.blockNumber ASC, from_same_page.chunkSeqId ASC
+                    ORDER BY from_same_page.blockNumber ASC, from_same_page.chunkSeqIndex ASC
                 WITH collect(from_same_page) as section_chunk_list
                     CALL apoc.nodes.link(
                         section_chunk_list, 

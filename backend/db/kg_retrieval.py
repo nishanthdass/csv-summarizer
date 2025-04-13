@@ -52,7 +52,8 @@ def build_retrieval_query(pdf_file_name):
           node {{
             closestText: node.text,
             sectionName: sectionName,
-            pageNumbers: pageNumbers
+            pageNumbers: pageNumbers,
+            source: sectionName
           }} AS metadata
     """
 

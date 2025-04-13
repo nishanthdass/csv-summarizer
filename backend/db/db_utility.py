@@ -417,6 +417,7 @@ def ingest_pdf_into_postgres(file: UploadFile):
     page_nums = None
     pdf_obj = process_pdf(pdf_file, complete_path, page_nums)
     pdf_obj = post_process_pdf(pdf_obj)
+    process_pdf_to_kg(pdf_obj, pdf_name)
 
 
     conn = db.get_db_connection()

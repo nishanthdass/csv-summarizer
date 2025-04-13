@@ -5,7 +5,7 @@ import psycopg2
 import re
 import os
 from config import LoadPostgresConfig
-from utils.pdf_processing_funct import process_pdf
+from utils.pdf_processing_funct import process_pdf, post_process_pdf
 from  db.kg_utility import process_pdf_to_kg
 import shutil
 import pymupdf
@@ -415,7 +415,8 @@ def ingest_pdf_into_postgres(file: UploadFile):
 
     pdf_file = pymupdf.open(complete_path, filetype="pdf")
     page_nums = None
-    pdf_obj = process_pdf(pdf_file, complete_path, page_nums, image_output_path, file_name_minus_extension)
+    pdf_obj = process_pdf(pdf_file, complete_path, page_nums)
+    pdf_obj = post_process_pdf(pdf_obj)
 
 
     conn = db.get_db_connection()

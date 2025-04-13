@@ -21,73 +21,38 @@ def build_retrieval_query(pdf_file_name):
         ORDER BY closestScore DESC
         LIMIT 1
 
-        WITH node, closestScore,
-             node.blockId     AS nClosestScoreBlockId,
-             node.blockNumber AS nClosestScoreBlockNumber,
-             node.chunkSeqIndex  AS nClosestScoreChunk,
-             node.text        AS nClosestScoreText,
-             node.source      AS nClosestScoreSource,
-             node.pageNumber  AS nClosestScorePageNumber,
-             node.isHeader    AS nClosestScoreIsHeader
+        // Get section name
+        MATCH (node)<-[:HAS_CHUNK]-(closestParagraph:Paragraph)<-[:HAS_PARAGRAPH]-(sec:Section)
+        // Get all paragrahs and chunks from section
+        MATCH (sec)-[:HAS_PARAGRAPH]->(siblingParagraph:Paragraph)-[:HAS_CHUNK]->(siblingChunk:Chunk)
 
-        MATCH (anyPage:Page)
-        WHERE anyPage.pdfFileName = '{pdf_file_name}'
-        WITH node, closestScore, nClosestScorePageNumber, nClosestScoreIsHeader, nClosestScoreBlockId, nClosestScoreText, nClosestScoreBlockNumber,
-             count(anyPage) AS totalPages
+        WITH
+            node,
+            closestParagraph,
+            closestScore,
+            sec.sectionName AS sectionName,
+            collect(DISTINCT siblingParagraph) AS allParagraphs,
+            collect(DISTINCT siblingChunk.chunkText) AS fullSectionChunks
 
+        // create a pageNumbers list from each paragraph’s pageNumber
+        WITH
+            node,
+            closestParagraph,
+            closestScore,
+            sectionName,
+            // extract pageNumber from each paragraph in allParagraphs
+            apoc.convert.toSet([p in allParagraphs WHERE p.pageNumber IS NOT NULL | p.pageNumber]) AS pageNumbers,
+            // build section response from all chunk texts
+            apoc.text.join(fullSectionChunks, ' ') AS sectionResponse
 
-        MATCH (node:Block) 
-        OPTIONAL MATCH (prev:Block)-[:NEXT*0..]->(node)
-        WHERE prev.pdfFileName = '{pdf_file_name}'
-          AND prev.pageNumber = nClosestScorePageNumber
-          AND prev.blockNumber < nClosestScoreBlockNumber
-          AND prev.isHeader = true
-        ORDER BY prev.blockNumber DESC
-        LIMIT 1
-        OPTIONAL MATCH (node)-[:NEXT*0..]->(next:Block)
-        WHERE next.pdfFileName = '{pdf_file_name}'
-          AND next.pageNumber = nClosestScorePageNumber
-          AND next.blockNumber > nClosestScoreBlockNumber
-          AND next.isHeader = true
-        ORDER BY next.blockNumber ASC
-        LIMIT 1
-
-        OPTIONAL MATCH p = (prev)-[:NEXT*]->(next)
-        WHERE ALL(n IN nodes(p) WHERE n.pageNumber = nClosestScorePageNumber)
-        WITH node, closestScore, nClosestScorePageNumber, nClosestScoreIsHeader, nClosestScoreBlockId, 
-             nClosestScoreText, nClosestScoreBlockNumber, totalPages, prev, next,
-             COALESCE(nodes(p)[1..-1], []) AS blocksBetween
-
-        OPTIONAL MATCH q = (b: Block)-[:NEXT*]->(next)
-        WHERE ALL(n IN nodes(q) WHERE n.pageNumber = nClosestScorePageNumber AND n.blockNumber >= 0)
-        WITH node, closestScore, nClosestScorePageNumber, nClosestScoreIsHeader, nClosestScoreBlockId, 
-             nClosestScoreText, nClosestScoreBlockNumber, totalPages, prev, next, blocksBetween,
-             COALESCE(nodes(q)[1..-1], []) AS startToNext
-
-        OPTIONAL MATCH r = (prev)-[:NEXT*]->(b: Block)
-        WHERE ALL(n IN nodes(r) WHERE n.pageNumber = nClosestScorePageNumber AND n.blockNumber <= totalPages)
-        WITH node, closestScore, nClosestScorePageNumber, nClosestScoreIsHeader, nClosestScoreBlockId, 
-             nClosestScoreText, nClosestScoreBlockNumber, totalPages, prev, next, blocksBetween, startToNext,
-             COALESCE(nodes(r)[1..-1], []) AS prevToEnd
-             
-        WITH node, closestScore, nClosestScorePageNumber, nClosestScoreIsHeader, nClosestScoreBlockId, 
-             nClosestScoreText, nClosestScoreBlockNumber, totalPages, prev, next, blocksBetween, startToNext, prevToEnd,
-             CASE
-                 WHEN prev IS NOT NULL AND next IS NOT NULL THEN blocksBetween
-                 WHEN prev IS NOT NULL AND next IS NULL THEN prevToEnd
-                 ELSE startToNext
-             END AS finalWindow
-
-        
         RETURN
-          // If finalWindow is an array, join the texts; adjust as needed:
-          apoc.text.join([x IN finalWindow | x.text], " ") AS text,
-          closestScore AS score,
+          sectionResponse AS text,
+          closestScore   AS score,
+          closestParagraph AS matchedParagraph,
           node {{
-            source: node.pageNumber,
-            text: node.text,
-            next: next.text,
-            prev: prev.text
+            closestText: node.text,
+            sectionName: sectionName,
+            pageNumbers: pageNumbers
           }} AS metadata
     """
 

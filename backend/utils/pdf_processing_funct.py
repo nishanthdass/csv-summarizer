@@ -50,14 +50,14 @@ def recursive_chunk_splitter(md_lines):
         item_text = item.page_content
         item_metadata = item.metadata
         item_text_chunks = recur_text_splitter.split_text(item_text) # split the text into chunks
-        chunk_seq_id = 0
+        chunk_seq_index = 0
 
         for chunk in item_text_chunks:# only take the first 20 chunks
-            item_metadata['chunk_seq_id'] = chunk_seq_id
-            item_metadata['block_id'] = f'{item.metadata["pdf_file_name"]}-{item.metadata["page_number"]}-{item.metadata["block_number"]}-chunk{chunk_seq_id:04d}'
+            item_metadata['chunk_seq_index'] = chunk_seq_index
+            item_metadata['block_id'] = f'{item.metadata["pdf_file_name"]}-{item.metadata["page_number"]}-{item.metadata["block_number"]}-chunk{chunk_seq_index:04d}'
             copy_metadata = item_metadata.copy()
             chunks_with_metadata.append(Document(page_content=chunk, metadata=copy_metadata))
-            chunk_seq_id += 1
+            chunk_seq_index += 1
 
     return chunks_with_metadata
 
@@ -79,14 +79,14 @@ def insert_additional_metadata(md, page, file_path, page_nums):
         chapter_number = "__Unknown__"
 
     # Default source is page number
-    source = page['metadata']['page']
+    source = None
 
     for line in md:
         initial_meta = line.metadata.copy()
 
         # Update source if header
         if initial_meta.get("is_header") is True:
-            source = line.page_content  # Or whatever unique identifier you want
+            source = line.page_content
 
         # Rebuild metadata
         line.metadata = {}
@@ -95,6 +95,7 @@ def insert_additional_metadata(md, page, file_path, page_nums):
         line.metadata['pdf_file_name'] = file_name
         line.metadata['toc'] = toc_items
         line.metadata['block_number'] = initial_meta.get("block_number", -1)
+        line.metadata['section_block_number'] = 0
         line.metadata['page_number'] = page['metadata']['page']
         line.metadata['has_images'] = False
         line.metadata['alt_title'] = title
@@ -135,12 +136,13 @@ def make_header_detector():
     returns_list = []
 
     def my_header_detector(span, page=None):
-        rprint(span)
         ret_val = ""
         returns_list.append(span)
         return ret_val
         
     return my_header_detector, returns_list
+
+    
 
 
 def process_pdf(pdf_file, file_path, page_nums=None):
@@ -177,14 +179,20 @@ def process_pdf(pdf_file, file_path, page_nums=None):
         # sort by block and line
         sorted_lines = sorted(text_array, key=lambda x: (x["block"], x["line"]))
 
+        # rprint(sorted_lines)
+
 
         # merge lines into their respective blocks
         merged_blocks = []
         for block_num, group in groupby(sorted_lines, key=lambda x: x["block"]):
-            
             block_lines = list(group)
             merged_text = " ".join(line["text"] for line in block_lines)
             is_header = any(line["is_header"] for line in block_lines)
+
+            split_sentence = merged_text.split(" ")
+            length_sentence = len(split_sentence)
+            if length_sentence >= 10:
+                is_header = False
 
             merged_blocks.append({
                 "block": block_num,
@@ -195,9 +203,57 @@ def process_pdf(pdf_file, file_path, page_nums=None):
         intitial_md = markdown_format(merged_blocks, num)
         
         final_md = insert_additional_metadata(intitial_md, md_output[0], file_path, num)
-
+            
+        # Split markdown into chunks
         md_lines_chunked = recursive_chunk_splitter(final_md)
 
         book_array.extend(md_lines_chunked)
 
     return book_array
+
+
+def post_process_pdf(processed_pdf):
+    last_source = None
+
+    
+    # If secttion name not available use page number as identifier
+    for doc in processed_pdf:
+        if doc.metadata['source'] is not None:
+            last_source = doc.metadata['source']
+        if doc.metadata['source'] is None:
+            if last_source is not None:
+                doc.metadata['source'] = last_source
+            else:
+                doc.metadata['source'] = "__Page__" + str( doc.metadata['page_number'])
+                
+    section = None
+    count = 0
+    is_header = None
+
+    # Add sources or paragraph header to each block
+    for doc in processed_pdf:
+        if doc.metadata['is_header'] is True:
+            is_header 
+            section = doc.metadata['source']
+            count = 0
+            doc.metadata['section_block_number'] = count
+            
+        elif doc.metadata['is_header'] is False and section == doc.metadata['source'] and doc.metadata['chunk_seq_index'] == 0:
+            count += 1
+            doc.metadata['section_block_number'] = count
+        elif doc.metadata['is_header'] is False and section == doc.metadata['source'] and doc.metadata['chunk_seq_index'] > 0:
+            doc.metadata['section_block_number'] = count
+
+
+    counter = 0
+    prev_block_number = None
+    
+    for doc in processed_pdf:
+        block_number = doc.metadata['block_number']
+        
+        if block_number != prev_block_number:
+            doc.metadata['block_number'] = counter
+            counter += 1
+    
+    return processed_pdf
+                

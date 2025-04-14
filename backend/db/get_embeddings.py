@@ -4,18 +4,12 @@ from langchain_openai import OpenAIEmbeddings
 from dotenv import load_dotenv
 from langchain_neo4j import Neo4jGraph
 from neo4j import GraphDatabase
-from config import LoadPostgresConfig, LoadNeo4jConfig
-from llm_core.config.load_llm_config import LoadOpenAIConfig
-from fastapi import HTTPException
-import sys
+from config import openai_var, neo4j_var, postgres_var
 import ast
 from db.db_utility import get_all_columns_and_types_tuple
 import psycopg2
 
 
-db = LoadPostgresConfig()
-openai_var  = LoadOpenAIConfig()
-neo4j_var = LoadNeo4jConfig()
 uri = neo4j_var.get_uri()
 user = neo4j_var.get_user()
 password = neo4j_var.get_password()
@@ -46,7 +40,7 @@ def create_array_from_string(input_string: str):
     return array_to_process
 
 def find_word_in_db(word: str):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     # Check if the word exists in the english_dict_openai_small table
@@ -63,7 +57,7 @@ def find_word_in_db(word: str):
 
 def insert_word_embedding_to_db(word: str, embedding: str):
     try:
-        conn = db.get_db_connection()
+        conn = postgres_var.get_db_connection()
         cur = conn.cursor()
 
         cur.execute(
@@ -100,7 +94,7 @@ def create_embedding_for_line(line: str):
 
 
 def get_embedding_for_word(word: str):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     # Check if the word exists in the english_dict_openai_small table
@@ -113,7 +107,7 @@ def get_embedding_for_word(word: str):
     return embedding
 
 def get_word_and_embedding(word: str):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     # Check if the word exists in the english_dict_openai_small table
@@ -165,7 +159,7 @@ def create_embedding_for_word(word: str):
 
 def insert_word_to_db(word: str):
     try:
-        conn = db.get_db_connection()
+        conn = postgres_var.get_db_connection()
         cur = conn.cursor()
 
         # Create embedding for the word
@@ -220,7 +214,7 @@ def get_similar_rows(table_name: str, words: str):
     """Get similar rows from table based on word and levenshtein distance. 
     Returns: list of tuples (word, column_name, column_value, lev_distance)"""
 
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     words_list = re.split(r"[,\s]+", words.strip())
@@ -283,7 +277,7 @@ def remove_duplicate_dicts(similar_rows):
 
 def get_all_columns_and_types_tuple(table_name):
     try:
-        connection = db.get_db_connection()
+        connection = postgres_var.get_db_connection()
         cur = connection.cursor()
 
         # Get primary key column(s)
@@ -321,7 +315,7 @@ def levenshtein_dist_from_db(table_name: str, words: str):
         It has no understanding of meaning, context, or semantics — it’s purely syntactic."""
 
     try:
-        connection = db.get_db_connection()
+        connection = postgres_var.get_db_connection()
         cur = connection.cursor()
     
         words_list = re.split(r"[,\s]+", words.strip())

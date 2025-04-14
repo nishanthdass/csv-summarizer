@@ -4,24 +4,19 @@ import pandas as pd
 import psycopg2
 import re
 import os
-from config import LoadPostgresConfig
 from utils.pdf_processing_funct import process_pdf, post_process_pdf
 from  db.kg_utility import process_pdf_to_kg
 import shutil
 import pymupdf
 from rich import print as rprint
-import sys
 from langchain_postgres import PGVector
 from langchain_openai import OpenAIEmbeddings
-from llm_core.config.load_llm_config import LoadOpenAIConfig
+from config import openai_var, postgres_var
 
 task_completion_status = {}
-db = LoadPostgresConfig()
-openai_var  = LoadOpenAIConfig()
-
 
 def run_query(table_name: str, query: str, role: str, query_type: str):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     cur.execute(f"SELECT to_regclass('{table_name}')")
@@ -53,7 +48,7 @@ def run_query(table_name: str, query: str, role: str, query_type: str):
 
 
 def get_all_columns_and_types(table_name):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     # Get primary key column(s)
@@ -84,7 +79,7 @@ def get_all_columns_and_types(table_name):
     return response
 
 def get_all_columns_and_types_tuple(table_name):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     # Get primary key column(s)
@@ -114,12 +109,12 @@ def get_all_columns_and_types_tuple(table_name):
 
 
 def get_all_columns(table_name):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
 
 def get_table_data(table_name: str, page: int, page_size: int):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     # Check if table exists
@@ -190,7 +185,7 @@ def get_table_data(table_name: str, page: int, page_size: int):
 
 
 def get_pdf_data(pdf_name: str):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     cur.execute(f"SELECT to_regclass('{pdf_name}')")
@@ -258,7 +253,7 @@ def ingest_csv_into_postgres(file: UploadFile):
         column_definitions.append(f"{clean_col} {postgres_type}")
 
 
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     try:
@@ -300,7 +295,7 @@ def ingest_csv_into_postgres(file: UploadFile):
     finally:
         cur.close()
         conn.close()
-        db.close_db_connection(conn)
+        postgres_var.close_db_connection(conn)
 
 
 def create_embeddings_via_langchain(table_name: str):
@@ -318,7 +313,7 @@ def create_embeddings_via_langchain(table_name: str):
     vector_store = PGVector(
         embeddings=embeddings,
         collection_name=collection_name,
-        connection=db.get_db_url(),
+        connection=postgres_var.get_db_url(),
     )
 
     id_str = str(table_name) + "_id"
@@ -330,7 +325,7 @@ def create_embeddings_via_langchain(table_name: str):
 def get_langchain_doc(table_name: str):
     doc = []
     try:
-        conn = db.get_db_connection()
+        conn = postgres_var.get_db_connection()
         cur = conn.cursor()
 
         # get all rows
@@ -361,7 +356,7 @@ def get_langchain_doc(table_name: str):
 
 
 def get_rows_by_id(table_name: str, row_id: int):
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     # Get actual column names (excluding 'embedding')
@@ -420,7 +415,7 @@ def ingest_pdf_into_postgres(file: UploadFile):
     process_pdf_to_kg(pdf_obj, pdf_name)
 
 
-    conn = db.get_db_connection()
+    conn = postgres_var.get_db_connection()
     cur = conn.cursor()
 
     # Create the table with a TEXT column for storing the file path

@@ -1,12 +1,6 @@
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
-from rich import print as rprint
-from llm_core.config.load_llm_config import LoadOpenAIConfig
-from config import LoadNeo4jConfig
-
-
-openai_var  = LoadOpenAIConfig()
-neo4j_var = LoadNeo4jConfig()
+from config import openai_var, neo4j_var
 
 
 VECTOR_INDEX_NAME = "pdf_lines"

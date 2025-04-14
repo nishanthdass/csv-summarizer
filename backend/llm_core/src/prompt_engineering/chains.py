@@ -3,9 +3,8 @@ from models.models import Route, DataAnalystResponse
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.messages import  trim_messages
 from db.kg_retrieval import kg_retrieval_window
-from langchain.chains import RetrievalQAWithSourcesChain, LLMChain
-from llm_core.config.load_llm_config import LoadOpenAIConfig
-from config import LoadPostgresConfig
+from langchain.chains import RetrievalQAWithSourcesChain
+from config import openai_var, postgres_var
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_community.agent_toolkits import create_sql_agent
@@ -13,10 +12,6 @@ from langchain_community.agent_toolkits import create_sql_agent
 from models.models import MessageState
 from rich import print as rprint
 from llm_core.src.prompt_engineering.templates import *
-
-
-openai_var  = LoadOpenAIConfig()
-postgres_var = LoadPostgresConfig()
 
 
 async def call_sql_agent(prompt:str, state: MessageState) -> MessageState:

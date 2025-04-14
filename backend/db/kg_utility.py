@@ -1,13 +1,10 @@
 from dotenv import load_dotenv
 from rich import print as rprint
-from llm_core.config.load_llm_config import LoadOpenAIConfig
-from config import LoadNeo4jConfig
+from config import neo4j_var
 
 
 load_dotenv()
-openai_var  = LoadOpenAIConfig()
-neo4j_var = LoadNeo4jConfig()
-kg = neo4j_var.get_NEO4J_connection()
+kg = neo4j_var.get_neo4j_connection()
 
 VECTOR_INDEX_NAME = "pdf_lines"
 VECTOR_NODE_LABEL = 'Line'

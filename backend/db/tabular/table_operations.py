@@ -1,5 +1,6 @@
 from config import postgres_var
 from fastapi import HTTPException
+from db.tabular.postgres_utilities import convert_postgres_to_react
 
 
 def run_query(table_name: str, query: str, role: str, query_type: str)-> list[str]:
@@ -105,3 +106,45 @@ def get_table_data(table_name: str, page: int, page_size: int):
     }
 
     return table_data
+
+
+def delete_table(table_name: str):
+    """
+    Deletes a table from the database.
+    Does not delete embeddings from vector store
+    """
+    conn = postgres_var.get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(f"DROP TABLE IF EXISTS {table_name}")
+        conn.commit()
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete table")
+    cur.close()
+    conn.close()
+
+    return {"message": f"Table {table_name} deleted successfully."}
+    
+
+def get_table_names_from_db():
+    conn = postgres_var.get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT c.relname AS table_name
+            FROM pg_class c
+            JOIN pg_description d ON c.oid = d.objoid
+            WHERE c.relkind = 'r'  -- 'r' stands for ordinary table
+            AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+            AND d.description = 'source_type: csv';
+        """)
+        files = [row[0] for row in cur.fetchall()]
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+
+    cur.close()
+    conn.close()
+
+    return files

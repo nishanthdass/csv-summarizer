@@ -1,27 +1,26 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
-import psycopg2
-from config import LoadPostgresConfig
-from models.models import TableNameRequest, PdfNameRequest, MessageInstance
-from db.tabular.insert_table import ingest_csv_into_postgres
-from db.tabular.table_operations import run_query, get_table_data, delete_table, get_table_names_from_db
-from db.tabular.pdf_record_operations import get_pdf_names_from_db, get_pdf_data
-from utils.os_tools import remove_file_extension
-
-from db.db_utility import ingest_pdf_into_postgres
-from services.tasks import delete_task_table
-from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
-from llm_core.src.utils.chatbot_manager import start_chatbot, set_table, set_pdf
-from rich import print as rprint
-import os
-import re
 import asyncio
 from starlette.status import HTTP_401_UNAUTHORIZED
+from rich import print as rprint
+
+# import tabular db functions
+from db.tabular.insert_table import ingest_csv_into_postgres
+from db.tabular.table_operations import run_query, get_table_data, delete_table, get_table_names_from_db
+from db.tabular.insert_pdf_record import ingest_pdf_into_postgres
+from db.tabular.pdf_record_operations import get_pdf_names_from_db, get_pdf_data
+
+# import os and task related functions
+from utils.os_tools import remove_file_extension, set_abs_path, if_path_exists
+from services.tasks import delete_task_table
+
+# import llm related functions
+from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
+from llm_core.src.utils.chatbot_manager import start_chatbot, set_table, set_pdf
+from models.models import TableNameRequest, PdfNameRequest, MessageInstance
 
 
 router = APIRouter()
-db = LoadPostgresConfig()
-
 
 @router.post("/upload", status_code=200)
 async def upload_file(file: UploadFile = File(...)):
@@ -149,9 +148,9 @@ async def get_pdf(pdf_name: str, request: Request):
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
     
-    pdf_path = os.path.abspath(f"./uploaded_files/pdf_files/{pdf_name}/{file_name}")
+    pdf_path = set_abs_path(f"./uploaded_files/pdf_files/{pdf_name}/{file_name}")
 
-    if not os.path.exists(pdf_path):
+    if not if_path_exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
 
     return FileResponse(

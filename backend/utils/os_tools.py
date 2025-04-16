@@ -39,3 +39,16 @@ def save_uploaded_file(file: UploadFile, upload_dir: str) -> str:
         shutil.copyfileobj(file.file, buffer)
         
     return file_location
+
+def set_abs_path(path: str) -> str:
+    """
+    Returns the absolute path of the given path.
+    """
+    return os.path.abspath(path)
+
+
+def if_path_exists(file_path: str) -> bool:
+    """
+    Returns True if the file exists, False otherwise.
+    """
+    return os.path.exists(file_path)

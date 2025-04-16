@@ -1,18 +1,14 @@
-import os
-from rich import print as rprint
-import pymupdf
+from utils.os_re_tools import get_name_from_path
 import pymupdf4llm
-import re
 from statistics import median
 from langchain_core.documents import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from llm_core.src.utils.embedding_utils import recur_text_splitter
 from itertools import groupby
-from operator import itemgetter
 
 
 def markdown_format(page_lines, page_num):
     '''
-    Convert page lines to markdown and insert metadata.
+    Convert lines to blocks/paragraphs in markdown format and insert metadata.
     '''
     md_lines = []
     for line in page_lines:
@@ -20,7 +16,6 @@ def markdown_format(page_lines, page_num):
         block_num = line["block"]
         is_header = line["is_header"]
 
-        # Instead of splitting, just wrap the whole text as Document
         doc = Document(
             page_content=text,
             metadata={
@@ -33,26 +28,21 @@ def markdown_format(page_lines, page_num):
     return md_lines
 
 
-recur_text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=400,
-    chunk_overlap=40,
-    length_function=len,
-    is_separator_regex=False,
-)
-
-def recursive_chunk_splitter(md_lines):
+def split_markdown_docs_into_chunks(md_lines):
     '''
-    Convert page lines to markdown.
+    Convert markdown of paragraphs/blocks to chunks.
     '''
-    chunks_with_metadata = [] # use this to accumlate chunk records
 
-    for item in md_lines: # pull these keys from the json
+    chunks_with_metadata = []
+    text_splitter = recur_text_splitter()
+
+    for item in md_lines:
         item_text = item.page_content
         item_metadata = item.metadata
-        item_text_chunks = recur_text_splitter.split_text(item_text) # split the text into chunks
+        item_text_chunks = text_splitter.split_text(item_text)
         chunk_seq_index = 0
 
-        for chunk in item_text_chunks:# only take the first 20 chunks
+        for chunk in item_text_chunks:
             item_metadata['chunk_seq_index'] = chunk_seq_index
             item_metadata['block_id'] = f'{item.metadata["pdf_file_name"]}-{item.metadata["page_number"]}-{item.metadata["block_number"]}-chunk{chunk_seq_index:04d}'
             copy_metadata = item_metadata.copy()
@@ -63,13 +53,13 @@ def recursive_chunk_splitter(md_lines):
 
 
 def insert_additional_metadata(md, page, file_path, page_nums):
-    file_name = os.path.splitext(os.path.basename(file_path))[0]
+    """insert metadata into lines of markdown"""
+    file_name = get_name_from_path(file_path)
     
     title = page['metadata']['title'] if page['metadata']['title'] else file_name
     page_count = page['metadata']['page_count']
     toc_items = page.get('toc_items', [])
 
-    # Handle TOC gracefully
     if toc_items and toc_items[0].strip() != "":
         toc_item = toc_items[0]
         chapter_name = toc_item[1] if toc_item[1].strip() != "" else "__Unknown__"
@@ -108,6 +98,9 @@ def insert_additional_metadata(md, page, file_path, page_nums):
 
 
 def span_is_header(span, size_median):
+    """
+    Determine if a span is a header.
+    """
     size = span["size"]
     flags = span["flags"]
     text  = span["text"].strip()
@@ -133,6 +126,7 @@ def span_is_header(span, size_median):
     
 
 def make_header_detector():
+    """ Call back function for header detection """
     returns_list = []
 
     def my_header_detector(span, page=None):
@@ -142,17 +136,23 @@ def make_header_detector():
         
     return my_header_detector, returns_list
 
-    
 
-
-def process_pdf(pdf_file, file_path, page_nums=None):
+def parse_and_chunk_pdf(pdf_file, file_path, page_nums=None):
     '''
-    Process a single page of a PDF file.
+    Parses and processes each page of a PDF file into structured text chunks with metadata.
+
+    Steps:
+    - Extracts text spans from each page using pymupdf4llm.
+    - Classifies lines as headers or body text based on font size and flags.
+    - Merges lines into text paragraphs/blocks grouped by layout blocks.
+    - Adds metadata such as page number, section name, TOC info, and PDF name.
+    - Splits long text blocks into smaller overlapping chunks using a recursive text splitter.
+    - Generates a unique block ID and chunk sequence index for each chunk.
+
+    Returns a list of LangChain Document objects, each containing a text chunk and metadata.
     '''
 
     book_array = []
-    prev_header = {}
-    has_images = False
 
     for num in range(len(pdf_file)):
         detector_func, page_spans = make_header_detector()
@@ -179,9 +179,6 @@ def process_pdf(pdf_file, file_path, page_nums=None):
         # sort by block and line
         sorted_lines = sorted(text_array, key=lambda x: (x["block"], x["line"]))
 
-        # rprint(sorted_lines)
-
-
         # merge lines into their respective blocks
         merged_blocks = []
         for block_num, group in groupby(sorted_lines, key=lambda x: x["block"]):
@@ -205,18 +202,26 @@ def process_pdf(pdf_file, file_path, page_nums=None):
         final_md = insert_additional_metadata(intitial_md, md_output[0], file_path, num)
             
         # Split markdown into chunks
-        md_lines_chunked = recursive_chunk_splitter(final_md)
-
+        md_lines_chunked = split_markdown_docs_into_chunks(final_md)
         book_array.extend(md_lines_chunked)
 
     return book_array
 
 
-def post_process_pdf(processed_pdf):
+def finalize_chunk_metadata(processed_pdf):
+    """finalizes metadata for a list of chunked PDF Document objects after initial parsing.
+
+    Steps performed:
+    - Ensures each chunk has a a section or header name as 'source' field.
+      If missing, then uses the page number.
+    - Assigns a 'section_block_number' to track paragraph position within a section.
+    - Resets and normalizes 'block_number' values to ensure ascending ordering 
+      across pages and sections.
+
+    returns the same list with updated and cleaned metadata fields."""
     last_source = None
 
-    
-    # If secttion name not available use page number as identifier
+    # If section name not available use page number as identifier
     for doc in processed_pdf:
         if doc.metadata['source'] is not None:
             last_source = doc.metadata['source']
@@ -243,7 +248,6 @@ def post_process_pdf(processed_pdf):
             doc.metadata['section_block_number'] = count
         elif doc.metadata['is_header'] is False and section == doc.metadata['source'] and doc.metadata['chunk_seq_index'] > 0:
             doc.metadata['section_block_number'] = count
-
 
     counter = 0
     prev_block_number = None

@@ -1,27 +1,33 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
-import psycopg2
-from config import LoadPostgresConfig
-from models.models import TableNameRequest, PdfNameRequest, MessageInstance
-from db.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data, run_query
-from services.tasks import get_task, delete_task_table
-from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
-from llm_core.src.utils.chatbot_manager import start_chatbot, set_table, set_pdf
-from rich import print as rprint
-import os
-import re
 import asyncio
 from starlette.status import HTTP_401_UNAUTHORIZED
+from rich import print as rprint
+
+# import tabular db functions
+from db.tabular.insert_table import ingest_csv_into_postgres
+from db.tabular.table_operations import run_query, get_table_data, delete_table, get_table_names_from_db
+from db.tabular.insert_pdf_record import ingest_pdf_into_postgres
+from db.tabular.pdf_record_operations import get_pdf_names_from_db, get_pdf_data
+
+# import os and task related functions
+from utils.os_re_tools import remove_file_extension, set_abs_path, if_path_exists
+from services.tasks import delete_task_table
+
+# import llm related functions
+from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
+from llm_core.src.utils.chatbot_manager import start_chatbot, set_table, set_pdf
+from models.models import TableNameRequest, PdfNameRequest, MessageInstance
 
 
 router = APIRouter()
-db = LoadPostgresConfig()
-
 
 @router.post("/upload", status_code=200)
 async def upload_file(file: UploadFile = File(...)):
     """
     Ingests a PDF or CSV file into a PostgreSQL table.
+    ingest_csv_into_postgres stores file, adds csv to table and creats/stores embeddings in vector store
+    ingest_pdf_into_postgres stores file, adds pdf file location to table and creates/stores embeddings in neo4j
     """
     if file.filename.endswith('.csv'):
         ingest_csv_into_postgres(file)
@@ -31,46 +37,23 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.delete("/delete-file", status_code=204)
 async def delete_table(table: TableNameRequest , request: Request):
+    """
+    Deletes a table from the database.
+    Does not delete embeddings from vector store
+    """
     table_name = table.table_name
-
     delete_task_table(table_name)
+    delete_table(table_name)
 
-    try:
-        conn = db.get_db_connection()
-        cur = conn.cursor()
-        cur.execute(f"DROP TABLE IF EXISTS {table_name}")
-        conn.commit()
-        cur.close()
-        conn.close()
-        return 
-    except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete table")
 
 @router.get("/get-tables", status_code=200)
 async def get_table_files(request: Request):
+    """
+    Returns a list of table names from the database.
+    """
     try:
-        conn = db.get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-            SELECT c.relname AS table_name
-            FROM pg_class c
-            JOIN pg_description d ON c.oid = d.objoid
-            WHERE c.relkind = 'r'  -- 'r' stands for ordinary table
-            AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
-            AND d.description = 'source_type: csv';
-        """)
-        files = [row[0] for row in cur.fetchall()]
-
-        cur.close()
-        conn.close()
-
-        return files
-    
-    except psycopg2.DatabaseError as e:
-        print(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error while fetching tables.")
+        table_names = get_table_names_from_db()
+        return table_names
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -78,36 +61,12 @@ async def get_table_files(request: Request):
 
 @router.get("/get-pdfs", status_code=200)
 async def get_pdf_files(request: Request):
+    """
+    Returns a list of pdf names from the database.
+    """
     try:
-        conn = db.get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-            SELECT c.relname AS table_name
-            FROM pg_class c
-            JOIN pg_description d ON c.oid = d.objoid
-            WHERE c.relkind = 'r'  -- 'r' stands for ordinary table
-            AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
-            AND d.description = 'source_type: pdf';
-        """)
-        files = [row[0] for row in cur.fetchall()]
-
-        table_content = []
-
-        for file in files:
-            cur.execute(f"SELECT * FROM {file}")
-            pdf_file_name = cur.fetchall()
-            res_obj = {"pdf_file_name": pdf_file_name[0][1],
-                        "table_name": file}
-            table_content.append(res_obj)
-        cur.close()
-        conn.close()
-
+        table_content = get_pdf_names_from_db()
         return table_content
-    
-    except psycopg2.DatabaseError as e:
-        print(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error while fetching tables.")
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -115,6 +74,9 @@ async def get_pdf_files(request: Request):
 
 @router.post("/get-table", status_code=200)
 async def get_table(table: TableNameRequest, request: Request):
+    """
+    Set selected table in chatbot manager and return table data
+    """
     table_name = table.table_name
     page = table.page
     page_size = table.page_size
@@ -124,6 +86,7 @@ async def get_table(table: TableNameRequest, request: Request):
     except Exception as e:
         print(f"Unexpected error in WebSocket endpoint: {e}")
     
+    # handles when user unselects table
     if not table_name:
         try:
             await set_table(session['name'], None, manager)
@@ -131,15 +94,11 @@ async def get_table(table: TableNameRequest, request: Request):
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to get table name")
     else:
+        # handles when user selects table
         try:
-
             table_data = get_table_data(table_name, page, page_size)
             await set_table(session['name'], table_name, manager)
-            
             return table_data
-        except psycopg2.DatabaseError as e:
-            print(f"Database error: {str(e)}")
-            raise HTTPException(status_code=500, detail="Internal server error while fetching table data.")
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -147,36 +106,23 @@ async def get_table(table: TableNameRequest, request: Request):
 
 @router.post("/set-pdf", status_code=200)
 async def set_pdf_route(pdf_name: PdfNameRequest, request: Request):
+    """Set selected pdf in chatbot manager and return pdf data"""
     try: 
         session = await verify_session(request)
-        print(f"chat_server for session: {session}")
     except Exception as e:
         print(f"Unexpected error in WebSocket endpoint: {e}")
 
+    # handles when user unselects pdf
     if not pdf_name.pdf_name:
         try:
             await set_pdf(session['name'], None, manager)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
-    
     else:
+        # handles when user selects pdf
         try:
-            conn = db.get_db_connection()
-            cur = conn.cursor()
-
-            cur.execute(f"SELECT to_regclass('{pdf_name.pdf_name}')")
-            table_exists = cur.fetchone()[0]
-            if not table_exists:
-                raise HTTPException(status_code=404, detail=f"Table {pdf_name.pdf_name} not found.")
-
-            cur.execute(f"SELECT {pdf_name.pdf_name + '.pdf_file_name'} FROM {pdf_name.pdf_name};")
-
-            file_name = cur.fetchone()[0]
-            file_name_minus_extension = re.sub(r'\.pdf$', '', file_name)
-
-            cur.close()
-            conn.close()
+            file_name_minus_extension = remove_file_extension(get_pdf_data(pdf_name))
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -190,34 +136,21 @@ async def set_pdf_route(pdf_name: PdfNameRequest, request: Request):
 
 @router.get("/get-pdf/{pdf_name}", status_code=200)
 async def get_pdf(pdf_name: str, request: Request):
+    """serves pdf file"""
     try: 
         session = await verify_session(request)
     except Exception as e:
         print(f"Unexpected error in WebSocket endpoint: {e}")
 
     try:
-        conn = db.get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute(f"SELECT to_regclass('{pdf_name}')")
-        table_exists = cur.fetchone()[0]
-        if not table_exists:
-            raise HTTPException(status_code=404, detail=f"Table {pdf_name} not found.")
-
-        cur.execute(f"SELECT {pdf_name + '.pdf_file_name'} FROM {pdf_name};")
-
-        file_name = cur.fetchone()[0]
-
-        cur.close()
-        conn.close()
+        file_name = get_pdf_data(pdf_name)
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
     
-    
-    pdf_path = os.path.abspath(f"./uploaded_files/pdf_files/{pdf_name}/{file_name}")
+    pdf_path = set_abs_path(f"./uploaded_files/pdf_files/{pdf_name}/{file_name}")
 
-    if not os.path.exists(pdf_path):
+    if not if_path_exists(pdf_path):
         raise HTTPException(status_code=404, detail="PDF file not found")
 
     return FileResponse(
@@ -282,6 +215,9 @@ async def chat_server(request: Request):
 
 @router.post("/sql-query")
 async def sql_query(request: Request):
+    """
+    This endpoint is used to run SQL queries.
+    """
 
     try: 
         session = await verify_session(request)
@@ -299,6 +235,9 @@ async def sql_query(request: Request):
 
 
 async def verify_session(request: Request):
+    """
+    Verifies the session and returns the user data.
+    """
     if "user_data" not in request.session:
         raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid session")
     return request.session["user_data"]

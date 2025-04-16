@@ -2,8 +2,8 @@ import logging
 from rich import print as rprint
 from models.models import MessageInstance
 import openai
-from db.db_utility import run_query
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AIMessage
+from db.tabular.table_operations import run_query
 from models.models import MessageState
 from rich import print as rprint
 import json

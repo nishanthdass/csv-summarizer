@@ -1,6 +1,6 @@
 from config import postgres_var
 from llm_core.src.utils.embedding_utils import get_embedder
-from db.structured.postgres_utilities import fetch_all_rows_from_table, create_langchain_docs_from_rows, get_all_columns_and_types
+from db.tabular.postgres_utilities import fetch_all_rows_from_table, create_langchain_docs_from_rows, get_all_columns_and_types
 from langchain_core.documents import Document
 from langchain_postgres import PGVector
 

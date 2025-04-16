@@ -1,6 +1,6 @@
 from utils.os_tools import remove_file_extension, create_folder_by_location, extract_table_name, save_uploaded_file
-from db.structured.postgres_utilities import insert_csv_into_table, add_fuzzystrmatch_extension, generate_column_definitions
-from db.structured.table_embeddings import get_docs_from_rows, create_embeddings_of_table_rows
+from db.tabular.postgres_utilities import insert_csv_into_table, add_fuzzystrmatch_extension, generate_column_definitions
+from db.tabular.table_embeddings import get_docs_from_rows, create_embeddings_of_table_rows
 from config import postgres_var
 from fastapi import UploadFile
 import pandas as pd

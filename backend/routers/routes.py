@@ -3,8 +3,8 @@ from fastapi.responses import FileResponse, JSONResponse
 import psycopg2
 from config import LoadPostgresConfig
 from models.models import TableNameRequest, PdfNameRequest, MessageInstance
-from db.structured.insert_table import ingest_csv_into_postgres
-from db.structured.table_operations import run_query, get_table_data
+from db.tabular.insert_table import ingest_csv_into_postgres
+from db.tabular.table_operations import run_query, get_table_data
 from db.db_utility import ingest_pdf_into_postgres
 from services.tasks import delete_task_table
 from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue

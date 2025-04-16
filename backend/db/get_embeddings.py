@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from langchain_neo4j import Neo4jGraph
 from neo4j import GraphDatabase
 from config import openai_var, neo4j_var, postgres_var
-from db.structured.postgres_utilities import get_all_columns_and_types
+from db.tabular.postgres_utilities import get_all_columns_and_types
 import ast
 import psycopg2
 

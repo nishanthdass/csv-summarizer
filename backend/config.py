@@ -1,4 +1,4 @@
-from db.structured.postgres_config import LoadPostgresConfig
+from db.tabular.postgres_config import LoadPostgresConfig
 from db.unstructured.neo4j_config import LoadNeo4jConfig
 from llm_core.llm_config import LoadOpenAIConfig
 

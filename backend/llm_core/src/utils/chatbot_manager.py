@@ -1,6 +1,6 @@
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk
 from typing import Dict, List
-from db.structured.postgres_utilities import get_all_columns_and_types
+from db.tabular.postgres_utilities import get_all_columns_and_types
 import uuid
 from rich import print as rprint
 import asyncio

@@ -24,6 +24,8 @@ db = LoadPostgresConfig()
 async def upload_file(file: UploadFile = File(...)):
     """
     Ingests a PDF or CSV file into a PostgreSQL table.
+    ingest_csv_into_postgres stores file, adds csv to table and creats/stores embeddings in vector store
+    ingest_pdf_into_postgres stores file, adds pdf file location to table and creates/stores embeddings in neo4j
     """
     if file.filename.endswith('.csv'):
         ingest_csv_into_postgres(file)
@@ -55,6 +57,9 @@ async def delete_table(table: TableNameRequest , request: Request):
 
 @router.get("/get-tables", status_code=200)
 async def get_table_files(request: Request):
+    """
+    Returns a list of table names from the database.
+    """
     try:
         conn = db.get_db_connection()
         cur = conn.cursor()

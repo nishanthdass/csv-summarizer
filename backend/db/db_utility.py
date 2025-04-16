@@ -7,60 +7,6 @@ import shutil
 import pymupdf
 from config import postgres_var
 
-task_completion_status = {}
-
-
-def get_pdf_data(pdf_name: str):
-    conn = postgres_var.get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute(f"SELECT to_regclass('{pdf_name}')")
-    table_exists = cur.fetchone()[0]
-    if not table_exists:
-        raise HTTPException(status_code=404, detail=f"Table {pdf_name} not found.")
-    
-    cur.execute(f"SELECT pdf_file_path FROM {pdf_name};")
-
-    file_path = cur.fetchone()[0]
-
-    cur.close()
-    conn.close()
-
-    # Build the table object
-    pdf_data = {
-        "file_path": file_path
-    }
-
-    return pdf_data
-
-
-def get_rows_by_id(table_name: str, row_id: int):
-    conn = postgres_var.get_db_connection()
-    cur = conn.cursor()
-
-    # Get actual column names (excluding 'embedding')
-    cur.execute("""
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_name = %s AND column_name != 'embedding';
-    """, (table_name,))
-    columns = [row[0] for row in cur.fetchall()]
-
-    # Build a SELECT statement with those columns
-    column_list = ", ".join(columns)
-
-    cur.execute(
-        f"SELECT {column_list} FROM {table_name} WHERE id = %s",
-        (row_id,)
-    )
-    row = cur.fetchone()
-
-    cur.close()
-    conn.close()
-
-    # Return row as a dictionary or None if not found
-    return dict(zip(columns, row)) if row else None
-
     
 def ingest_pdf_into_postgres(file: UploadFile):
     """

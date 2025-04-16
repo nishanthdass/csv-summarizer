@@ -3,7 +3,8 @@ from fastapi.responses import FileResponse, JSONResponse
 import psycopg2
 from config import LoadPostgresConfig
 from models.models import TableNameRequest, PdfNameRequest, MessageInstance
-from db.structured.postgres_utils import ingest_csv_into_postgres, run_query, get_table_data
+from db.structured.insert_table import ingest_csv_into_postgres
+from db.structured.table_operations import run_query, get_table_data
 from db.db_utility import ingest_pdf_into_postgres
 from services.tasks import delete_task_table
 from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
@@ -32,8 +33,11 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.delete("/delete-file", status_code=204)
 async def delete_table(table: TableNameRequest , request: Request):
+    """
+    Deletes a table from the database.
+    Does not delete embeddings from vector store
+    """
     table_name = table.table_name
-
     delete_task_table(table_name)
 
     try:
@@ -47,6 +51,7 @@ async def delete_table(table: TableNameRequest , request: Request):
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete table")
+
 
 @router.get("/get-tables", status_code=200)
 async def get_table_files(request: Request):

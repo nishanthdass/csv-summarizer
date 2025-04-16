@@ -3,7 +3,7 @@ from rich import print as rprint
 from models.models import MessageInstance
 import openai
 from langchain_core.messages import AIMessage
-from db.structured.postgres_utils import run_query
+from db.structured.table_operations import run_query
 from models.models import MessageState
 from rich import print as rprint
 import json

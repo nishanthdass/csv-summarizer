@@ -1,6 +1,6 @@
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk
 from typing import Dict, List
-from db.db_utility import get_all_columns_and_types
+from db.structured.postgres_utils import get_all_columns_and_types
 import uuid
 from rich import print as rprint
 import asyncio
@@ -11,7 +11,6 @@ class ChatbotManager:
     """Manages chatbots, stores and retreives old messages."""
     def __init__(self):
         self.chatbots: Dict[str, Dict[str, List[BaseMessage]]] = {}
-
 
     async def create_chatbot(self, session: str, language: str):
         if session in self.chatbots:
@@ -33,7 +32,7 @@ class ChatbotManager:
     async def set_table(self, session: str, table_name: str):
         try:
             self.chatbots[session]["table_name"] = table_name
-            self.chatbots[session]["columns_and_types"] = get_all_columns_and_types(table_name)
+            self.chatbots[session]["columns_and_types"] =  ",".join(f"{col}({dtype})" for col, dtype in get_all_columns_and_types(table_name))
         
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace Table name for session {session}: {e}")
@@ -45,8 +44,6 @@ class ChatbotManager:
                 self.chatbots[session]["messages"][thread_id][table_name] = None
             elif table_name not in self.chatbots[session]["messages"][thread_id]:
                 self.chatbots[session]["messages"][thread_id][table_name] = None
-
-            rprint("Table Config: ", self.chatbots[session]["messages"])
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace Table config for session {session}: {e}")
         
@@ -54,7 +51,6 @@ class ChatbotManager:
     async def set_pdf(self, session: str, pdf_name: str):
         try:
             self.chatbots[session]["pdf_name"] = pdf_name
-            rprint("PDF Name: ", self.chatbots[session]["pdf_name"])
         
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace PDF name for session {session}: {e}")
@@ -66,8 +62,6 @@ class ChatbotManager:
                 self.chatbots[session]["messages"][thread_id][pdf_name] = None
             elif pdf_name not in self.chatbots[session]["messages"][thread_id]:
                 self.chatbots[session]["messages"][thread_id][pdf_name] = None
-        
-            rprint("PDF Config: ", self.chatbots[session]["messages"])
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace PDF config for session {session}: {e}")
 

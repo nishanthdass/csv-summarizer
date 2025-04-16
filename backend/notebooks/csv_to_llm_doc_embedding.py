@@ -22,7 +22,7 @@ def get_langchain_doc(table_name: str):
         cur.execute(f"SELECT * FROM {table_name};")
         rows = cur.fetchall()
 
-        columns_types = get_all_columns_and_types_tuple(table_name)
+        columns_types = get_all_columns_and_types(table_name)
         columns = ["id"] + [col[0] for col in columns_types]
         rprint(columns)
 

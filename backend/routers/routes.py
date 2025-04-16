@@ -3,8 +3,9 @@ from fastapi.responses import FileResponse, JSONResponse
 import psycopg2
 from config import LoadPostgresConfig
 from models.models import TableNameRequest, PdfNameRequest, MessageInstance
-from db.db_utility import ingest_csv_into_postgres, ingest_pdf_into_postgres, get_table_data, run_query
-from services.tasks import get_task, delete_task_table
+from db.structured.postgres_utils import ingest_csv_into_postgres, run_query, get_table_data
+from db.db_utility import ingest_pdf_into_postgres
+from services.tasks import delete_task_table
 from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
 from llm_core.src.utils.chatbot_manager import start_chatbot, set_table, set_pdf
 from rich import print as rprint

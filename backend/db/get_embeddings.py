@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 from langchain_neo4j import Neo4jGraph
 from neo4j import GraphDatabase
 from config import openai_var, neo4j_var, postgres_var
+from db.structured.postgres_utils import get_all_columns_and_types
 import ast
-from db.db_utility import get_all_columns_and_types_tuple
 import psycopg2
 
 
@@ -220,7 +220,7 @@ def get_similar_rows(table_name: str, words: str):
     words_list = re.split(r"[,\s]+", words.strip())
 
 
-    columns_and_types = get_all_columns_and_types_tuple(table_name)  # Returns List[Tuple[column_name, type]]
+    columns_and_types = get_all_columns_and_types(table_name)  # Returns List[Tuple[column_name, type]]
 
     results = []
 
@@ -275,41 +275,6 @@ def remove_duplicate_dicts(similar_rows):
     return unique_rows
 
 
-def get_all_columns_and_types_tuple(table_name):
-    try:
-        connection = postgres_var.get_db_connection()
-        cur = connection.cursor()
-
-        # Get primary key column(s)
-        cur.execute(f"""
-            SELECT a.attname
-            FROM   pg_index i
-            JOIN   pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-            WHERE  i.indrelid = '{table_name}'::regclass AND i.indisprimary;
-        """)
-        primary_keys = {row[0] for row in cur.fetchall()}
-    
-        # Get all columns excluding 'embedding' and primary keys
-        cur.execute(f"""
-            SELECT column_name, data_type
-            FROM information_schema.columns
-            WHERE table_name = %s
-              AND column_name != 'embedding';
-        """, (table_name,))
-        all_columns = cur.fetchall()
-        
-        filtered_columns = [(col, dtype) for col, dtype in all_columns if col not in primary_keys]
-
-        cur.close()
-        connection.close()
-
-        return filtered_columns
-
-    except psycopg2.DatabaseError as e:
-        print(f"Error: {str(e)}")
-        return []
-    
-
 def levenshtein_dist_from_db(table_name: str, words: str):
     """ Counts how many single-character edits (insertion, deletion, substitution) it takes to transform one string into another.
         It has no understanding of meaning, context, or semantics — it’s purely syntactic."""
@@ -320,7 +285,7 @@ def levenshtein_dist_from_db(table_name: str, words: str):
     
         words_list = re.split(r"[,\s]+", words.strip())
     
-        columns_and_types = get_all_columns_and_types_tuple(table_name)
+        columns_and_types = get_all_columns_and_types(table_name)
     
         results = []
 

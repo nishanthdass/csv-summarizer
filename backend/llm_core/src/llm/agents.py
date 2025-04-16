@@ -6,7 +6,7 @@ from rich import print as rprint
 from llm_core.src.prompt_engineering.chains import call_sql_agent, json_parser_prompt_chain_data_analyst
 from langgraph.types import interrupt, Command
 from llm_core.src.utils.utility_function import *
-from db.get_embeddings import get_similar_rows, get_all_columns_and_types_tuple, levenshtein_dist_from_db
+from db.get_embeddings import get_similar_rows, get_all_columns_and_types, levenshtein_dist_from_db
 import time
 import logging
 
@@ -144,7 +144,7 @@ async def data_analyst_node(state: MessageState) -> MessageState:
     time_table["data_analyst"] = time.time()
     question = state["question"].content
 
-    columns = get_all_columns_and_types_tuple(table_name)
+    columns = get_all_columns_and_types(table_name)
     col_str = ", ".join(item[0] for item in columns)
 
     # Get information from PDF KG

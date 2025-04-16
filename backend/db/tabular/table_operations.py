@@ -2,7 +2,7 @@ from config import postgres_var
 from fastapi import HTTPException
 import psycopg2
 from db.tabular.postgres_utilities import convert_postgres_to_react, get_all_columns_and_types
-from utils.os_tools import split_words_by_spaces
+from utils.os_re_tools import split_words_by_commas_and_spaces
 
 def run_query(table_name: str, query: str, role: str, query_type: str)-> list[str]:
     """
@@ -46,7 +46,7 @@ def levenshtein_dist(table_name: str, words: str):
         connection = postgres_var.get_db_connection()
         cur = connection.cursor()
     
-        words_list = split_words_by_spaces(words)
+        words_list = split_words_by_commas_and_spaces(words)
     
         columns_and_types = get_all_columns_and_types(table_name)
     

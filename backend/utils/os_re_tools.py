@@ -5,14 +5,26 @@ from fastapi import UploadFile
 
 
 def sanitize_label(label: str) -> str:
+    """
+    Sanitizes the given label for use as a name.
+    """
     return re.sub(r'\W+', '_', label).lower()
 
 
 def remove_file_extension(filename: str) -> str:
+    """
+    Removes the file extension from the given filename.
+    """
     return re.sub(r'\.\w+$', '', filename)
 
-def split_words_by_spaces(words: str):
+
+def split_words_by_commas_and_spaces(words: str):
+    """
+    Splits the given string into a list of words, ignoring commas and spaces.
+    """
     return re.split(r"[,\s]+", words.strip())
+
+
 
 def create_folder_by_location(location: str):
     """

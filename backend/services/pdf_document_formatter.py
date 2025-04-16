@@ -2,7 +2,7 @@ from utils.os_re_tools import get_name_from_path
 import pymupdf4llm
 from statistics import median
 from langchain_core.documents import Document
-from llm_core.src.utils.embedding_utils import recur_text_splitter
+from llm_core.src.llm_utils.embedding_utils import recur_text_splitter
 from itertools import groupby
 
 

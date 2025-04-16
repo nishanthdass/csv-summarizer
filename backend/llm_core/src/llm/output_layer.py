@@ -1,7 +1,7 @@
 import asyncio
 from models.models import MessageInstance
 from langchain_core.messages import HumanMessage
-from llm_core.src.utils.utility_function import *
+from llm_core.src.llm_utils.utility_function import *
 
 
 async def start_next_agent_stream(manager, session_id, message_str: str, next_agent: str, time: float, thread_id: str):

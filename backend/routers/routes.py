@@ -16,7 +16,7 @@ from services.tasks import delete_task_table
 
 # import llm related functions
 from llm_core.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
-from llm_core.src.utils.chatbot_manager import start_chatbot, set_table, set_pdf
+from llm_core.src.llm_utils.chatbot_manager import start_chatbot, set_table, set_pdf
 from models.models import TableNameRequest, PdfNameRequest, MessageInstance
 
 

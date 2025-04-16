@@ -1,6 +1,6 @@
 from models.models import MessageInstance
 from langchain_core.messages import HumanMessage
-from llm_core.src.utils.utility_function import *
+from llm_core.src.llm_utils.utility_function import *
 
 
 async def set_chat_state(manager, session_id, message: MessageInstance):

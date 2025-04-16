@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from models.models import Route, DataAnalystResponse
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.messages import  trim_messages
-from db.kg_retrieval import kg_retrieval_window
+from db.document.neo4j_retrieval import kg_retrieval_window
 from langchain.chains import RetrievalQAWithSourcesChain
 from config import openai_var, postgres_var
 from langchain_community.utilities import SQLDatabase
@@ -52,12 +52,8 @@ async def json_parser_prompt_chain_data_analyst(inputs):
                         temperature=0 )
     parser = JsonOutputParser(pydantic_object=DataAnalystResponse)
     prompt = create_data_analyst_prompt(format_instructions=parser.get_format_instructions())
-    rprint("prompt: ", prompt)
     chain = prompt | model | parser
-    rprint("chain: ", chain)
     response = await chain.ainvoke(inputs)
-
-    rprint("response: ", response)
 
     return response
 

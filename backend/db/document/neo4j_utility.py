@@ -1,20 +1,19 @@
 from dotenv import load_dotenv
 from rich import print as rprint
-from config import neo4j_var
+from config import neo4j_var, openai_var
 
 
 load_dotenv()
 kg = neo4j_var.get_neo4j_connection()
 
+
 VECTOR_INDEX_NAME = "pdf_lines"
-VECTOR_NODE_LABEL = 'Line'
 VECTOR_SOURCE_PROPERTY = 'text'
-VECTOR_EMBEDDING_PROPERTY = 'textEmbedding'
 
 
 def param_insert(pdf_as_llm_doc):
     '''
-    Format params for Neo4j query
+    Format params for Neo4j chunk insert
     '''
     params = {
         'chunkParam': {
@@ -60,42 +59,40 @@ RETURN mergedBlock
 """
 
 
-def create_paragraph_constraints():
-    """Create constraints for paragraph nodes accross the entire document"""
+def create_block_constraints():
+    """Create constraints for Block nodes"""
     kg.query("""
         CREATE CONSTRAINT unique_block IF NOT EXISTS 
             FOR (b:Block) REQUIRE b.blockId IS UNIQUE
         """)
 
 
-def add_paragraph_as_node(pdf_obj):
-    """Add lines as node with metadata"""
+def add_block_as_node(pdf_obj):
+    """Add each block as node with metadata"""
     node_count = 0
     for line in pdf_obj:
         params = param_insert(line)
         kg.query(merge_block_node_query, 
                 params=params)
         node_count += 1
-    print(f"Created {node_count} nodes")
-
 
 
 def create_document(pdf_name):
-    """Create Documentt entity from Paragraph nodes"""
+    """Create Document entity from Block nodes"""
 
-    kg.query(
-        """
+    cypher = """
         MATCH (b:Block)
         WHERE b.documentName = $fileName
         WITH DISTINCT b.documentName AS documentName
         MERGE (b:Document { documentName: documentName })
         RETURN b
-        """, 
-        params={'fileName': pdf_name})
+        """
+
+    kg.query(cypher, params={'fileName': pdf_name})
     
 
 def create_pages(pdf_name):
-    """Create pages from Paragraph nodes"""
+    """Create pages from Block nodes"""
     
     cypher = """
         MATCH (b:Block)
@@ -105,12 +102,12 @@ def create_pages(pdf_name):
         RETURN b
         """
 
-    result = kg.query(cypher, params={'fileName': pdf_name})
+    kg.query(cypher, params={'fileName': pdf_name})
 
 
 
 def create_chapters(pdf_name):
-    """Create pages from Paragraph nodes"""
+    """Create pages from Block nodes"""
     
     cypher = """
         MATCH (b:Block)
@@ -120,13 +117,14 @@ def create_chapters(pdf_name):
         RETURN b
         """
 
-    result = kg.query(cypher, params={'fileName': pdf_name})
+    kg.query(cypher, params={'fileName': pdf_name})
 
 
 def create_sections(pdf_name):
     """
     Create a single Section node per sectionName
     """
+
     cypher = """
         MATCH (b:Block)
         WHERE b.documentName = $fileName
@@ -137,12 +135,13 @@ def create_sections(pdf_name):
         })
         RETURN sec
     """
+
     kg.query(cypher, params={'fileName': pdf_name})
 
 
-
 def create_sections_paragraph(pdf_name):
-    """Create sections paragraph from Paragraph nodes"""
+    """Create sections paragraph from Block nodes"""
+
     cypher = """
         MATCH (b:Block)
         WHERE b.documentName = $fileName
@@ -151,10 +150,12 @@ def create_sections_paragraph(pdf_name):
         RETURN b
         """
 
-    result = kg.query(cypher, params={'fileName': pdf_name})
+    kg.query(cypher, params={'fileName': pdf_name})
+
 
 def create_chunks(pdf_name):
-    """Create sections paragraph from Paragraph nodes"""
+    """Create chunks from Block nodes"""
+
     cypher = """
         MATCH (b:Block)
         WHERE b.documentName = $fileName
@@ -163,7 +164,7 @@ def create_chunks(pdf_name):
         RETURN b
         """
 
-    result = kg.query(cypher, params={'fileName': pdf_name})
+    kg.query(cypher, params={'fileName': pdf_name})
     
 
 def link_document_to_chapters(pdf_name):
@@ -178,7 +179,6 @@ def link_document_to_chapters(pdf_name):
     kg.query(cypher, params={'fileName': pdf_name})
 
 
-
 def link_chapters_to_pages(pdf_name):
     """
     Links each Page node to the Chapter it belongs to.
@@ -191,27 +191,17 @@ def link_chapters_to_pages(pdf_name):
     kg.query(cypher, params={'fileName': pdf_name})
 
 
-
 def link_pages_to_sections(pdf_name):
     """
-    Links each Page to all Section(s) that appear on that page.
+    Links each Page to all sections that appear on that page.
     Multiple pages can point to the same Section node.
     """
     cypher = """
-        // For each page, find its blocks to see what sectionName(s) appear there.
         MATCH (pg:Page {documentName: $fileName})
         MATCH (b:Block {documentName: $fileName, pageId: pg.pageId})
-        
-        // Collect the distinct sectionName for that page
         WITH pg, collect(DISTINCT b.section) AS sectionNames
-        
-        // Unwind the list so we have (pg, sectionName) pairs
         UNWIND sectionNames AS sName
-        
-        // Match the single Section node for that (documentName, sName)
         MATCH (sec:Section {documentName: $fileName, sectionName: sName})
-        
-        // Link them
         MERGE (pg)-[:HAS_SECTION]->(sec)
     """
     kg.query(cypher, params={'fileName': pdf_name})
@@ -239,18 +229,6 @@ def link_paragraphs_to_chunks(pdf_name):
         MERGE (para)-[:HAS_CHUNK]->(chk)
     """
     kg.query(cypher, params={'fileName': pdf_name})
-
-
-def get_all_page_numbers(pdf_name):
-    """Get all page numbers from documents in ascending order"""
-    cypher = """
-    MATCH (p:Page)
-    WHERE p.documentName = $pageInfoParam
-    ORDER BY p.pageNumber ASC
-    RETURN p.pageNumber as pageNumber 
-    """
-    all_pages = kg.query(cypher, params={'pageInfoParam': pdf_name})
-    return all_pages
 
 
 def link_next_pages(pdf_name):
@@ -311,16 +289,17 @@ def link_next_chunks(pdf_name):
 def create_vector_index():
     """Create vector index for chunk nodes"""
     try:
-        result = kg.query("""
-            CREATE VECTOR INDEX $VECTOR_INDEX_NAME IF NOT EXISTS
-            FOR (chk:Chunk) ON (chk.textEmbedding) 
-            OPTIONS { 
-                indexConfig: {
-                    `vector.dimensions`: 512,
-                    `vector.similarity_function`: 'cosine'    
+        query = """
+                CREATE VECTOR INDEX $VECTOR_INDEX_NAME IF NOT EXISTS
+                FOR (chk:Chunk) ON (chk.textEmbedding) 
+                OPTIONS { 
+                    indexConfig: {
+                        `vector.dimensions`: 512,
+                        `vector.similarity_function`: 'cosine'    
+                    }
                 }
-            }
-        """, params={"VECTOR_INDEX_NAME": VECTOR_INDEX_NAME})
+                """
+        kg.query(query, params={"VECTOR_INDEX_NAME": VECTOR_INDEX_NAME})
         
     except Exception as e:
         rprint(f"Query failed: {str(e)}")
@@ -328,32 +307,35 @@ def create_vector_index():
 
 def create_chunk_embeddings():
     """Create embeddings for Chunk nodes"""
-    kg.query("""
-    MATCH (chk:Chunk) WHERE chk.textEmbedding IS NULL
-    WITH chk, genai.vector.encode(
-      chk.chunkText, 
-      "OpenAI", 
-      {
-        token: $openAiApiKey, 
-        endpoint: $openAiEndpoint,
-        model: $model,
-        dimensions: 512
-      }) AS vector
-    CALL db.create.setNodeVectorProperty(chk, "textEmbedding", vector)
-    """, 
-    params={
-        "openAiApiKey": openai_var.openai_api_key,
-        "openAiEndpoint": openai_var.openai_endpoint,
-        "model" : openai_var.openai_embedding_modal_small,
-    })
+    cypher = """
+            MATCH (chk:Chunk) WHERE chk.textEmbedding IS NULL
+            WITH chk, genai.vector.encode(
+            chk.chunkText, 
+            "OpenAI", 
+            {
+                token: $openAiApiKey, 
+                endpoint: $openAiEndpoint,
+                model: $model,
+                dimensions: 512
+            }) AS vector
+            CALL db.create.setNodeVectorProperty(chk, "textEmbedding", vector)
+            """
+    kg.query(cypher, 
+        params={
+            "openAiApiKey": openai_var.openai_api_key,
+            "openAiEndpoint": openai_var.openai_endpoint,
+            "model" : openai_var.openai_embedding_modal_small,
+        })
     kg.refresh_schema()
 
 
     
 def process_pdf_to_kg(pdf_obj, pdf_name):
     try:
-        create_paragraph_constraints()
-        add_paragraph_as_node(pdf_obj)
+        # Insert blocks that make up the document
+        # Blocks contain metadata to create entities
+        create_block_constraints()
+        add_block_as_node(pdf_obj)
         create_document(pdf_name)
         create_chapters(pdf_name)
         create_pages(pdf_name)

@@ -1,15 +1,26 @@
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
+from llm_core.src.utils.embedding_utils import get_embedder
 from config import openai_var, neo4j_var
 
 
 VECTOR_INDEX_NAME = "pdf_lines"
-VECTOR_NODE_LABEL = 'Line'
 VECTOR_SOURCE_PROPERTY = 'text'
-VECTOR_EMBEDDING_PROPERTY = 'textEmbedding'
 
 
 def build_retrieval_query(pdf_file_name):
+    """
+    Builds a Cypher query to retrieve the most relevant section of a document 
+    based on a similarity score.
+
+    - Finds the closest matching chunk (`node`) and its paragraph and section.
+    - Collects all sibling paragraphs and chunks from the same section.
+    - Joins all chunk texts into a single section response.
+    - Extracts unique page numbers from the section.
+
+    Returns the full section text, match score, matched paragraph, 
+    and metadata including section name and page numbers.
+    """
     return f"""
         WITH node, score AS closestScore
         ORDER BY closestScore DESC
@@ -52,16 +63,10 @@ def build_retrieval_query(pdf_file_name):
     """
 
 
-
 def kg_retrieval_window(file_name):
-    """retriever for the knowledge graph"""
+    """Retriever window for Neo4j knowledge graph."""
     vector_store_window = Neo4jVector.from_existing_index(
-        embedding=OpenAIEmbeddings(
-            openai_api_key=openai_var.openai_api_key,
-            openai_api_base=openai_var.openai_endpoint,
-            model=openai_var.openai_embedding_modal_small,
-            dimensions=512
-        ),
+        embedding=get_embedder(512),
         url=neo4j_var.neo4j_uri,
         username=neo4j_var.neo4j_user,
         password=neo4j_var.neo4j_password,

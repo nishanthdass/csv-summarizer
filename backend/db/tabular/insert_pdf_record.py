@@ -2,7 +2,7 @@ from fastapi import HTTPException, UploadFile
 import re
 import os
 from utils.pdf_processing_funct import process_pdf, post_process_pdf
-from  db.kg_utility import process_pdf_to_kg
+from  db.document.neo4j_utility import process_pdf_to_kg
 import shutil
 import pymupdf
 from config import postgres_var

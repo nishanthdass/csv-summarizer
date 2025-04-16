@@ -1,7 +1,7 @@
 from fastapi import HTTPException, UploadFile
 import re
 import os
-from utils.pdf_processing_funct import process_pdf, post_process_pdf
+from services.pdf_document_formatter import parse_and_chunk_pdf, finalize_chunk_metadata
 from  db.document.neo4j_utility import process_pdf_to_kg
 import shutil
 import pymupdf
@@ -35,8 +35,8 @@ def ingest_pdf_into_postgres(file: UploadFile):
 
     pdf_file = pymupdf.open(complete_path, filetype="pdf")
     page_nums = None
-    pdf_obj = process_pdf(pdf_file, complete_path, page_nums)
-    pdf_obj = post_process_pdf(pdf_obj)
+    pdf_obj = parse_and_chunk_pdf(pdf_file, complete_path, page_nums)
+    pdf_obj = finalize_chunk_metadata(pdf_obj)
     process_pdf_to_kg(pdf_obj, pdf_name)
 
 

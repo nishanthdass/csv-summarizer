@@ -25,7 +25,11 @@ def split_words_by_commas_and_spaces(words: str):
     return re.split(r"[,\s]+", words.strip())
 
 
-
+def get_name_from_path(file_path: str) -> str:
+    """
+    Returns the name of the file at the given path.
+    """
+    return os.path.splitext(os.path.basename(file_path))[0]
 def create_folder_by_location(location: str):
     """
     Creates a folder if it doesn't exist.

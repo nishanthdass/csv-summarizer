@@ -11,7 +11,8 @@ def sanitize_label(label: str) -> str:
 def remove_file_extension(filename: str) -> str:
     return re.sub(r'\.\w+$', '', filename)
 
-
+def split_words_by_spaces(words: str):
+    return re.split(r"[,\s]+", words.strip())
 
 def create_folder_by_location(location: str):
     """

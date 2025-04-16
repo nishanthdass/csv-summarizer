@@ -7,7 +7,7 @@ from llm_core.src.prompt_engineering.chains import call_sql_agent, json_parser_p
 from langgraph.types import interrupt, Command
 from llm_core.src.utils.utility_function import *
 from db.tabular.postgres_utilities import get_all_columns_and_types
-from db.get_embeddings import levenshtein_dist_from_db
+from db.tabular.table_operations import levenshtein_dist
 import time
 import logging
 
@@ -158,7 +158,7 @@ async def data_analyst_node(state: MessageState) -> MessageState:
     relevant_columns = pdf_retrieval_answer["relevant_columns"]
 
     # Get data from table by comparing pdf data points with levenshtein distance of values in table
-    ranked_results_via_ld = levenshtein_dist_from_db(table_name, pdf_data_points)
+    ranked_results_via_ld = levenshtein_dist(table_name, pdf_data_points)
 
     relevant_columns_from_pdf = [col.strip() for col in relevant_columns.split(",")]
     validated_data_points_via_ld = []

@@ -238,7 +238,6 @@ def finalize_chunk_metadata(processed_pdf):
     # Add sources or paragraph header to each block
     for doc in processed_pdf:
         if doc.metadata['is_header'] is True:
-            is_header 
             section = doc.metadata['source']
             count = 0
             doc.metadata['section_block_number'] = count

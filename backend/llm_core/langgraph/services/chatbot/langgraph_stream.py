@@ -10,9 +10,11 @@ from llm_core.langgraph.components.agents.agents import *
 from llm_core.langgraph.utilities.utility_function import *
 from llm_core.langgraph.components.agents.agent_functions import sql_agent_function
 from llm_core.langgraph.services.chatbot.chatbot_manager import ChatbotManager
-from models.models import MessageInstance
+from llm_core.langgraph.models.models import MessageInstance
 from typing import Tuple, List
 import asyncio
+from langchain_core.messages import HumanMessage
+from llm_core.langgraph.utilities.utility_function import *
 
 # Set up tracing for debugging
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
@@ -25,11 +27,6 @@ app = None
 memory = MemorySaver()
 manager = ChatbotManager()
 message_queue = asyncio.Queue()
-
-
-from models.models import MessageInstance
-from langchain_core.messages import HumanMessage
-from llm_core.langgraph.utilities.utility_function import *
 
 
 async def set_chat_state(manager, session_id, message: MessageInstance):
@@ -57,7 +54,6 @@ async def set_chat_state(manager, session_id, message: MessageInstance):
         "agent_step": 0,
         "runtime_queries": "",
         "query_failed": None,
-        "message_number": 0
     }
 
     return state

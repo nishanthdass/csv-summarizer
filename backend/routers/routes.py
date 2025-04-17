@@ -13,11 +13,12 @@ from db.tabular.pdf_record_operations import get_pdf_names_from_db, get_pdf_data
 # import os and task related functions
 from utilities.os_re_tools import remove_file_extension, set_abs_path, if_path_exists
 from services.tasks import delete_task_table
+from models.models import TableNameRequest, PdfNameRequest
 
 # import llm related functions
 from llm_core.langgraph.services.chatbot.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
 from llm_core.langgraph.services.chatbot.chatbot_manager import start_chatbot, set_table, set_pdf
-from models.models import TableNameRequest, PdfNameRequest, MessageInstance
+from llm_core.langgraph.models.models import MessageInstance
 
 
 router = APIRouter()

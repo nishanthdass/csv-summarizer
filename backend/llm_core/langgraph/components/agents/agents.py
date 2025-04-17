@@ -1,4 +1,4 @@
-from models.models import MessageState
+from llm_core.langgraph.models.models import MessageState
 from llm_core.langgraph.components.agents.agent_functions import sql_agent_function
 from llm_core.langgraph.components.prompts.templates import *
 from llm_core.langgraph.components.chains.chains import json_parser_prompt_chain, trimmer, kg_retrieval_chain

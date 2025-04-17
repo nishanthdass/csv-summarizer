@@ -1,5 +1,5 @@
 from langchain_openai import ChatOpenAI
-from models.models import Route, DataAnalystResponse
+from llm_core.langgraph.models.models import Route, DataAnalystResponse, MessageState
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.messages import  trim_messages
 from db.document.neo4j_retrieval import kg_retrieval_window
@@ -8,8 +8,6 @@ from config import openai_var, postgres_var
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_community.agent_toolkits import create_sql_agent
-
-from models.models import MessageState
 from llm_core.langgraph.components.prompts.templates import *
 
 

@@ -1,4 +1,4 @@
-from models.models import MessageState
+from llm_core.langgraph.models.models import MessageState
 from langgraph.graph import START, StateGraph, END
 from llm_core.langgraph.components.agents.agents import *
 

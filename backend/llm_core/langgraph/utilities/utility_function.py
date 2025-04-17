@@ -1,9 +1,8 @@
 import logging
 from rich import print as rprint
-from models.models import MessageInstance
+from llm_core.langgraph.models.models import MessageState, MessageInstance
 import openai
 from langchain_core.messages import AIMessage
-from models.models import MessageState
 from rich import print as rprint
 import json
 import re

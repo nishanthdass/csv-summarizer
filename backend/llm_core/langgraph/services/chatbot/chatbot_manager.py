@@ -1,6 +1,5 @@
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk
+from langchain_core.messages import BaseMessage
 from typing import Dict, List
-from db.tabular.postgres_utilities import get_all_columns_and_types
 import uuid
 from rich import print as rprint
 import asyncio
@@ -13,6 +12,7 @@ class ChatbotManager:
         self.chatbots: Dict[str, Dict[str, List[BaseMessage]]] = {}
 
     async def create_chatbot(self, session: str, language: str):
+        """Creates a new chatbot."""
         if session in self.chatbots:
             rprint("Chatbot already exists for session: ", session)
             return
@@ -24,16 +24,14 @@ class ChatbotManager:
             "config": config,
             "messages": {},
             "table_name": None,
-            "pdf_name": None,
-            "columns_and_types": None
+            "pdf_name": None
         }
 
 
     async def set_table(self, session: str, table_name: str):
+        """Sets the table name for the chatbot. Does not trigger the chat stream."""
         try:
             self.chatbots[session]["table_name"] = table_name
-            self.chatbots[session]["columns_and_types"] =  ",".join(f"{col}({dtype})" for col, dtype in get_all_columns_and_types(table_name))
-        
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace Table name for session {session}: {e}")
         
@@ -49,9 +47,9 @@ class ChatbotManager:
         
 
     async def set_pdf(self, session: str, pdf_name: str):
+        """Sets the pdf name for the chatbot. Does not trigger the chat stream."""
         try:
             self.chatbots[session]["pdf_name"] = pdf_name
-        
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace PDF name for session {session}: {e}")
         
@@ -67,6 +65,7 @@ class ChatbotManager:
 
 
     async def get_chatbot(self, session_id: str):
+        """Returns the chatbot for the session."""
         print(f"Getting chatbot for session: {session_id}: ", self.chatbots)
         if session_id not in self.chatbots:
             raise ValueError(f"No chatbot found for session '{session_id}'.")
@@ -74,45 +73,18 @@ class ChatbotManager:
     
 
     async def get_chatbot_table_name(self, session_id: str):
+        """Returns the set table name for the chatbot."""
         if "table_name" not in self.chatbots[session_id]:
             return None
         return self.chatbots[session_id]["table_name"]
         
 
     async def get_chatbot_pdf_name(self, session_id: str):
+        """Returns the set pdf name for the chatbot."""
         if "pdf_name" not in self.chatbots[session_id]:
             return None
         return self.chatbots[session_id]["pdf_name"]
-    
 
-    async def get_chatbot_columns_and_types(self, session_id: str):
-        if "columns_and_types" not in self.chatbots[session_id]:
-            return 
-        return self.chatbots[session_id]["columns_and_types"]
-    
-
-    async def get_chatbot_config(self, session_id: str):
-        if "config" not in self.chatbots[session_id]:
-            return None  
-        return self.chatbots[session_id]["config"]
-    
-    
-    async def get_table_config(self, session_id: str, table_name: str):
-        if table_name not in self.chatbots[session_id]["messages"]:
-            return None
-        return self.chatbots[session_id]["messages"][table_name]
-    
-
-    async def get_pdf_config(self, session_id: str, pdf_name: str):
-        if pdf_name not in self.chatbots[session_id]["messages"]:
-            return None
-        return self.chatbots[session_id]["messages"][pdf_name]
-    
-    
-    async def get_combo_config(self, session_id: str, table_name: str, pdf_name: str):
-        if table_name not in self.chatbots[session_id]["messages"] or pdf_name not in self.chatbots[session_id]["messages"]:
-            return None
-        return self.chatbots[session_id]["messages"][table_name]
 
 
 async def start_chatbot(session: str, manager):

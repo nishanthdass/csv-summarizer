@@ -1,4 +1,4 @@
-from utils.os_re_tools import sanitize_label
+from utilities.os_re_tools import sanitize_label
 from config import postgres_var
 import pandas as pd
 from langchain_core.documents import Document

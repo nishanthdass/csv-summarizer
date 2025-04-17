@@ -2,7 +2,7 @@ from config import postgres_var
 from fastapi import HTTPException
 import psycopg2
 from db.tabular.postgres_utilities import convert_postgres_to_react, get_all_columns_and_types
-from utils.os_re_tools import split_words_by_commas_and_spaces
+from utilities.os_re_tools import split_words_by_commas_and_spaces
 
 def run_query(table_name: str, query: str, role: str, query_type: str)-> list[str]:
     """

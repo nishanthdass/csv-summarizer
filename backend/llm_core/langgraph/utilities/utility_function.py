@@ -3,33 +3,14 @@ from rich import print as rprint
 from models.models import MessageInstance
 import openai
 from langchain_core.messages import AIMessage
-from db.tabular.table_operations import run_query
 from models.models import MessageState
 from rich import print as rprint
 import json
 import re
 
-def sql_agent_function(table_name: str, query: str, role: str, query_type: str):
-    message_str = ""
-    try:
-        res = run_query(table_name, query, role, query_type)
-        keys = list(res[0].keys())
-        if len(keys) >= 1:
-            for dict_res in res:
-                for key in keys:
-                    if key != "ctid":
-                        message_str += key + ": " + str(dict_res[key]) + "<br/>"
-                message_str += "<br/>"
-
-        res = {"Result": message_str}
-        return res
-    except Exception as e:
-        rprint(f"Query failed: {str(e)}")
-        res = {"Error": str(e)}
-        return res
-
 
 async def convert_to_dict(string: str) -> dict:
+    """convers a json string to a dictionary"""
     match = re.search(r'```json\s*(\{.*?\})\s*```', string, re.DOTALL)
     if match:
         json_str = match.group(1).strip()
@@ -54,11 +35,7 @@ async def set_state(state: MessageState, response: dict) -> MessageState:
     return state
 
 
-
-
-
 def find_word_in_text( word, words_to_find, word_buffer):
-    # print( "input word: ", word )
     for word_to_find in words_to_find:
         if word_to_find in word_buffer:
             return [True, word_to_find]
@@ -142,21 +119,72 @@ async def safe_send(active_websockets, message: MessageInstance, session_id: str
         logging.warning("Attempted to send a message on a closed WebSocket.")
 
 
-def process_stream_event_type(event):
-    if event.get("event") == "on_chain_start":
-            data = event.get("data", {})     
-            if isinstance(data, dict) and "input" in data:
-                input_data = data["input"]
-                if isinstance(input_data, dict) and "next_agent" in input_data:
-                    next_agent = input_data["next_agent"]
-                    return "on_chain_start", next_agent
-    return None, None
 
-def get_embedding(text):
-    response = openai.embeddings.create(
-        model="text-embedding-3-large",
-        input=text
-    )
-    return response.data[0].embedding 
 
+async def start_next_agent_stream(manager, session_id, message_str: str, next_agent: str, time: float, thread_id: str):
+    time_int = int(time * 1000)
+    float_time = float(time_int) / 1000
+    message = {
+                    "event": "on_chain_start",
+                    "message": message_str,
+                    "table_name": await manager.get_chatbot_table_name(session_id),
+                    "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+                    "role": next_agent,
+                    "time": float_time,
+                    "thread_id": thread_id
+                }
     
+    return message
+
+
+async def char_agent_stream(manager, session_id, word_buffer: str, role: str, time: float):
+    time_int = int(time * 1000)
+    float_time = float(time_int) / 1000
+    message = {
+            "event": "on_chat_model_stream", 
+            "message": word_buffer,
+            "table_name": await manager.get_chatbot_table_name(session_id),
+            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+            "role": role,
+            "time": float_time,
+            }
+
+    return message
+
+async def usage_agent_stream(manager, session_id, usage_metadata: list, role: str, time: float):
+    time_int = int(time * 1000)
+    float_time = float(time_int) / 1000
+    message = {
+            "event": "on_chat_model_end", 
+            "table_name": await manager.get_chatbot_table_name(session_id),
+            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+            "input_tokens": usage_metadata[0],
+            "output_tokens": usage_metadata[1],
+            "total_tokens": usage_metadata[2],
+            "run_id": usage_metadata[3],
+            "model_name": usage_metadata[5],
+            "tool_call_name": usage_metadata[4],
+            "role": role,
+            "time": float_time,
+            }
+
+    return message
+
+
+async def query_agent_stream(manager, session_id, message_str: str, role: str, time: float, visualizing_query: str, viewing_query_label: str, query_type: str):
+    time_int = int(time * 1000)
+    float_time = float(time_int) / 1000
+    message = {
+            "event": "on_query_stream", 
+            "message": message_str,
+            "table_name": await manager.get_chatbot_table_name(session_id),
+            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+            "role": role,
+            "time": float_time,
+            "visualizing_query": visualizing_query,
+            "viewing_query_label": viewing_query_label,
+            "query_type": query_type
+            }
+
+    return message
+

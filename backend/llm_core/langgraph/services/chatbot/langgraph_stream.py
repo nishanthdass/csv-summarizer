@@ -5,12 +5,11 @@ from langgraph.types import Command
 import logging
 from rich import print as rprint
 from config import LoadPostgresConfig
-from llm_core.src.llm.langgraph_graph_api import workflow_sql, workflow_pdf, workflow_multi
-from llm_core.src.llm.agents import *
-from llm_core.src.llm_utils.utility_function import *
-from llm_core.src.llm_utils.chatbot_manager import ChatbotManager
-from llm_core.src.llm.input_layer import  set_chat_state
-from llm_core.src.llm.output_layer import start_next_agent_stream, char_agent_stream, end_agent_stream, usage_agent_stream, query_agent_stream
+from llm_core.langgraph.services.chatbot.langgraph_graph_api import workflow_sql, workflow_pdf, workflow_multi
+from llm_core.langgraph.components.agents.agents import *
+from llm_core.langgraph.utilities.utility_function import *
+from llm_core.langgraph.components.agents.agent_functions import sql_agent_function
+from llm_core.langgraph.services.chatbot.chatbot_manager import ChatbotManager
 from models.models import MessageInstance
 from typing import Tuple, List
 import asyncio
@@ -27,6 +26,42 @@ memory = MemorySaver()
 manager = ChatbotManager()
 message_queue = asyncio.Queue()
 
+
+from models.models import MessageInstance
+from langchain_core.messages import HumanMessage
+from llm_core.langgraph.utilities.utility_function import *
+
+
+async def set_chat_state(manager, session_id, message: MessageInstance):
+    state = {
+        "current_agent": None,
+        "next_agent": None,
+        "question": HumanMessage(content=message.message),
+        "augmented_question": None,
+        "answer": None,
+        "table_name": await manager.get_chatbot_table_name(session_id),
+        "table_relevant_data": None,
+        "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+        "pdf_relevant_data": None,
+        "messages": [HumanMessage(content=message.message)],
+        "agent_scratchpads": [],
+        "columns_and_types": await manager.get_chatbot_columns_and_types(session_id),
+        "query_type": None,
+        "answer_retrieval_query": None,
+        "visualize_retrieval_query": None,
+        "visualize_retrieval_label": None,
+        "perform_manipulation_query": None,
+        "perform_manipulation_label": None,
+        "has_function_call": None,
+        "function_call": None,
+        "is_multiagent": False,
+        "agent_step": 0,
+        "runtime_queries": "",
+        "query_failed": None,
+        "message_number": 0
+    }
+
+    return state
 
 
 async def run_chatbots(session_id: str):

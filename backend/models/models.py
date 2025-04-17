@@ -53,7 +53,6 @@ class MessageState(TypedDict):
     pdf_relevant_data: str
     messages: Annotated[Sequence[BaseMessage], add_messages]
     agent_scratchpads: list
-    columns_and_types: str
     answer_retrieval_query: str
     visualizing_query: str
     viewing_query_label: str

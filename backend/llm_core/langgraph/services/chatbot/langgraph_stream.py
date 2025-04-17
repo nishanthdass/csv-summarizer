@@ -45,7 +45,6 @@ async def set_chat_state(manager, session_id, message: MessageInstance):
         "pdf_relevant_data": None,
         "messages": [HumanMessage(content=message.message)],
         "agent_scratchpads": [],
-        "columns_and_types": await manager.get_chatbot_columns_and_types(session_id),
         "query_type": None,
         "answer_retrieval_query": None,
         "visualize_retrieval_query": None,

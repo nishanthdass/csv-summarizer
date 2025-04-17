@@ -1,6 +1,5 @@
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage, AIMessageChunk
+from langchain_core.messages import BaseMessage
 from typing import Dict, List
-from db.tabular.postgres_utilities import get_all_columns_and_types
 import uuid
 from rich import print as rprint
 import asyncio
@@ -24,15 +23,13 @@ class ChatbotManager:
             "config": config,
             "messages": {},
             "table_name": None,
-            "pdf_name": None,
-            "columns_and_types": None
+            "pdf_name": None
         }
 
 
     async def set_table(self, session: str, table_name: str):
         try:
             self.chatbots[session]["table_name"] = table_name
-            self.chatbots[session]["columns_and_types"] =  ",".join(f"{col}({dtype})" for col, dtype in get_all_columns_and_types(table_name))
         
         except Exception as e:
             raise RuntimeError(f"Failed to add or replace Table name for session {session}: {e}")
@@ -83,12 +80,6 @@ class ChatbotManager:
         if "pdf_name" not in self.chatbots[session_id]:
             return None
         return self.chatbots[session_id]["pdf_name"]
-    
-
-    async def get_chatbot_columns_and_types(self, session_id: str):
-        if "columns_and_types" not in self.chatbots[session_id]:
-            return 
-        return self.chatbots[session_id]["columns_and_types"]
     
 
     async def get_chatbot_config(self, session_id: str):

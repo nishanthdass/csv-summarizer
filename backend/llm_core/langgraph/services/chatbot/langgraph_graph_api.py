@@ -1,6 +1,6 @@
 from models.models import MessageState
 from langgraph.graph import START, StateGraph, END
-from llm_core.src.llm.agents import *
+from llm_core.langgraph.components.agents.agents import *
 
 
 # --- Build the SQL State Graph ---

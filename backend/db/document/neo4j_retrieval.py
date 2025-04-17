@@ -1,7 +1,6 @@
-from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Neo4jVector
-from llm_core.src.llm_utils.embedding_utils import get_embedder
-from config import openai_var, neo4j_var
+from llm_core.langgraph.utilities.embedding_utils import get_embedder
+from config import neo4j_var
 
 
 VECTOR_INDEX_NAME = "pdf_lines"

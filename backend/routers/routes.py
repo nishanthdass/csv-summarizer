@@ -12,12 +12,13 @@ from db.tabular.pdf_record_operations import get_pdf_names_from_db, get_pdf_data
 
 # import os and task related functions
 from utilities.os_re_tools import remove_file_extension, set_abs_path, if_path_exists
+from utilities.authorization import verify_session
+from llm_core.utilities.chatbot_utilities import get_chatbot_manager
 from services.tasks import delete_task_table
 from models.models import TableNameRequest, PdfNameRequest
 
 # import llm related functions
-from llm_core.langgraph.services.chatbot.langgraph_stream import run_chatbots, active_websockets, tasks, manager, message_queue
-from llm_core.langgraph.services.chatbot.chatbot_manager import start_chatbot, set_table, set_pdf
+from llm_core.services.chatbot_stream import run_chatbots, active_websockets, tasks, message_queue
 from llm_core.langgraph.models.models import MessageInstance
 
 
@@ -86,11 +87,12 @@ async def get_table(table: TableNameRequest, request: Request):
         print(f"chat_server for session: {session}")
     except Exception as e:
         print(f"Unexpected error in WebSocket endpoint: {e}")
-    
+
+    manager = get_chatbot_manager(request)
     # handles when user unselects table
     if not table_name:
         try:
-            await set_table(session['name'], None, manager)
+            await manager.set_table(session['name'], None)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to get table name")
@@ -98,7 +100,7 @@ async def get_table(table: TableNameRequest, request: Request):
         # handles when user selects table
         try:
             table_data = get_table_data(table_name, page, page_size)
-            await set_table(session['name'], table_name, manager)
+            await manager.set_table(session['name'], table_name)
             return table_data
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
@@ -108,28 +110,31 @@ async def get_table(table: TableNameRequest, request: Request):
 @router.post("/set-pdf", status_code=200)
 async def set_pdf_route(pdf_name: PdfNameRequest, request: Request):
     """Set selected pdf in chatbot manager and return pdf data"""
+
     try: 
         session = await verify_session(request)
     except Exception as e:
         print(f"Unexpected error in WebSocket endpoint: {e}")
 
+    manager = get_chatbot_manager(request)
+
     # handles when user unselects pdf
     if not pdf_name.pdf_name:
         try:
-            await set_pdf(session['name'], None, manager)
+            await manager.set_pdf(session['name'], None)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
     else:
         # handles when user selects pdf
         try:
-            file_name_minus_extension = remove_file_extension(get_pdf_data(pdf_name))
+            file_name_minus_extension = remove_file_extension(get_pdf_data(pdf_name.pdf_name))
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
         
         try:
-            await set_pdf(session['name'], file_name_minus_extension, manager)
+            await manager.set_pdf(session['name'], file_name_minus_extension)
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
@@ -152,7 +157,7 @@ async def get_pdf(pdf_name: str, request: Request):
     pdf_path = set_abs_path(f"./uploaded_files/pdf_files/{pdf_name}/{file_name}")
 
     if not if_path_exists(pdf_path):
-        raise HTTPException(status_code=404, detail="PDF file not found")
+        raise HTTPException(status_code=404, detail="PDF file not found")\
 
     return FileResponse(
         path=pdf_path,
@@ -202,11 +207,11 @@ async def chat_server(request: Request):
             return {"message": "No active websockets for session: " + session['name']}
         
         if not tasks.get(session['name']):
-            await start_chatbot(session['name'], manager)
-            task = asyncio.create_task(run_chatbots(session['name']))
+            manager = get_chatbot_manager(request)
+            state = await manager.ensure_state(session['name'])
+            task = asyncio.create_task(run_chatbots(session['name'], state))
             tasks[session['name']] = task
         else:
-            print("chat-server task already exists for session: ", session)
             task = tasks.get(session['name'])
 
     except Exception as e:
@@ -228,17 +233,10 @@ async def sql_query(request: Request):
     try:
         body = await request.json()
         result = run_query(body['table_name'], body['query'], body['role'], body['query_type'])
+        rprint(result)
         return JSONResponse(content={"success": True, "data": result})
 
     except Exception as e:
         rprint(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
-
-async def verify_session(request: Request):
-    """
-    Verifies the session and returns the user data.
-    """
-    if "user_data" not in request.session:
-        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid session")
-    return request.session["user_data"]

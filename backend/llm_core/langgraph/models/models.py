@@ -8,24 +8,25 @@ from pydantic import BaseModel, Field
 
 
 class MessageInstance(BaseModel):
-    role: Optional[str] = None
-    table_name: Optional[str] = None
-    pdf_name: Optional[str] = None
-    event: Optional[str] = None
-    message: Optional[str] = None
-    time: Optional[float] = None
-    input_tokens: Optional[int] = None
-    output_tokens: Optional[int] = None
-    total_tokens: Optional[int] = None
-    run_id: Optional[str] = None
-    thread_id: Optional[str] = None
-    tool_call_name: Optional[str] = None
-    model_name: Optional[str] = None
-    answer_retrieval_query: Optional[str] = None
-    visualizing_query: Optional[str] = None
-    viewing_query_label: Optional[str] = None
-    query_type: Optional[str] = None
-    has_function_call: Optional[bool] = None
+    """Schema for message."""
+    role: Optional[str] = None                      # name of the agent that sent the message
+    table_name: Optional[str] = None                # name of table associated with the message
+    pdf_name: Optional[str] = None                  # name of pdf associated with the message
+    event: Optional[str] = None                     # event type from chat stream
+    message: Optional[str] = None                   # message from chat stream
+    time: Optional[float] = None                    # processing time
+    input_tokens: Optional[int] = None              # input tokens used
+    output_tokens: Optional[int] = None             # output tokens used
+    total_tokens: Optional[int] = None              # total tokens used
+    run_id: Optional[str] = None                    # run id from chat stream
+    thread_id: Optional[str] = None                 # thread id created by chat manager upon initialization
+    has_function_call: Optional[bool] = None        # whether the message contains a function call
+    tool_call_name: Optional[str] = None            # tool call used to generate results
+    model_name: Optional[str] = None                # model name used to generate results
+    answer_retrieval_query: Optional[str] = None    # query that answers the question
+    visualizing_query: Optional[str] = None         # query thatn visualizes the answer
+    viewing_query_label: Optional[str] = None       # label for the visualization
+    query_type: Optional[str] = None                # query type (retrieval or manipulation)
    
 
 class MessageState(TypedDict):

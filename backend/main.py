@@ -1,16 +1,17 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 from routers.routes import router
 
-
 load_dotenv()
 
 SESSION_SECRET_KEY = "b8ea5b70-1f09-41ae-b057-ffec3958f1f6"         # Replace with your own secret key
 
 app = FastAPI()
+app.state.managers = {}
+
 
 app.add_middleware(
     CORSMiddleware,

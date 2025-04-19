@@ -38,24 +38,27 @@ def get_pdf_names_from_db():
     return table_content
 
 def get_pdf_data(pdf_name: str):
-    """returns pdf file name minus extension from db"""
+    """Returns pdf file name (without extension) from the database."""
     conn = postgres_var.get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(f"SELECT to_regclass('{pdf_name.pdf_name}')")
+        # Check if table exists
+        cur.execute("SELECT to_regclass(%s)", (pdf_name,))
         table_exists = cur.fetchone()[0]
         if not table_exists:
-            raise HTTPException(status_code=404, detail=f"Table {pdf_name.pdf_name} not found.")
+            raise HTTPException(status_code=404, detail=f"Table {pdf_name} not found.")
 
-        cur.execute(f"SELECT {pdf_name.pdf_name + '.pdf_file_name'} FROM {pdf_name.pdf_name};")
-
+        # Fetch the PDF file name from the table
+        cur.execute(f"SELECT pdf_file_name FROM {pdf_name} LIMIT 1;")
         file_name = cur.fetchone()[0]
 
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
-    cur.close()
-    conn.close()
+    finally:
+        cur.close()
+        conn.close()
 
+    print("get_pdf_data: ", file_name)
     return file_name

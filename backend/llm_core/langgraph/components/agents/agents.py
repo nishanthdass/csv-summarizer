@@ -115,7 +115,7 @@ async def pdf_agent_node(state: MessageState) -> MessageState:
     answer = await convert_to_dict(response["answer"])
 
     response = {}
-    response["answer"] = answer["answer"]
+    response["answer"] = answer["response"]
     response["next_agent"] = "__end__"
 
     state = await set_state(state, response)
@@ -140,56 +140,74 @@ async def data_analyst_node(state: MessageState) -> MessageState:
       6. Integrates the matched table data and the PDF data points into the user's question 
       7. Returns the updated message state, which includes the augmented question
     """
-        
     table_name = state["table_name"]
+    rprint("table_name: ", table_name)
+    if not table_name:
+        state["is_multiagent"] = False
+    else:
+        state["is_multiagent"] = True
     pdf_name = state["pdf_name"]
     time_table["data_analyst"] = time.time()
     question = state["question"].content
+    if state["is_multiagent"] is False:
+        rprint("multi: ", state["is_multiagent"])
+        input_variables={"question": question, "pdf_name": pdf_name} # no table_name in 
+        pdf_retrieval = kg_retrieval_chain(PDFAGENTPROMPTTEMPLATE_A, input_variables)
+        rprint(pdf_retrieval)
+        pdf_retrieval_answer = await convert_to_dict(pdf_retrieval["answer"])
+        rprint(pdf_retrieval_answer)
+        answer = pdf_retrieval_answer["response"]
+        pdf_data_points = pdf_retrieval_answer["data_points"]
+    else:
+        columns = get_all_columns_and_types(table_name)
+        col_str = ", ".join(item[0] for item in columns)
 
-    columns = get_all_columns_and_types(table_name)
-    col_str = ", ".join(item[0] for item in columns)
+        # Get information from PDF KG
+        input_variables={"question": question, "columns": col_str, "pdf_name": pdf_name}
+        pdf_retrieval = kg_retrieval_chain(PDFAGENTPROMPTTEMPLATE_B, input_variables)
+        pdf_retrieval_answer = await convert_to_dict(pdf_retrieval["answer"])
 
-    # Get information from PDF KG
-    input_variables={"question": question, "columns": col_str, "pdf_name": pdf_name}
-    pdf_retrieval = kg_retrieval_chain(PDFAGENTPROMPTTEMPLATE_B, input_variables)
-    pdf_retrieval_answer = await convert_to_dict(pdf_retrieval["answer"])
+        answer = pdf_retrieval_answer["response"]
+        pdf_data_points = pdf_retrieval_answer["data_points"]
+        relevant_columns = pdf_retrieval_answer["relevant_columns"]
 
-    answer = pdf_retrieval_answer["response"]
-    pdf_data_points = pdf_retrieval_answer["data_points"]
-    relevant_columns = pdf_retrieval_answer["relevant_columns"]
+        # Get data from table by comparing pdf data points with levenshtein distance of values in table
+        ranked_results_via_ld = levenshtein_dist(table_name, pdf_data_points)
 
-    # Get data from table by comparing pdf data points with levenshtein distance of values in table
-    ranked_results_via_ld = levenshtein_dist(table_name, pdf_data_points)
+        relevant_columns_from_pdf = [col.strip() for col in relevant_columns.split(",")]
+        validated_data_points_via_ld = []
 
-    relevant_columns_from_pdf = [col.strip() for col in relevant_columns.split(",")]
-    validated_data_points_via_ld = []
+        for col in relevant_columns_from_pdf:
+            for data in ranked_results_via_ld:
+                if data[0] == col:
+                    data_str = "( Column Name: " + str(data[0]) + ", Value: " + str(data[1]) + " )"
+                    validated_data_points_via_ld.append(data_str)
 
-    for col in relevant_columns_from_pdf:
-        for data in ranked_results_via_ld:
-            if data[0] == col:
-                data_str = "( Column Name: " + str(data[0]) + ", Value: " + str(data[1]) + " )"
-                validated_data_points_via_ld.append(data_str)
+        validated_data_points_via_ld = ", ".join(str(element) for element in validated_data_points_via_ld[:10])
 
-    validated_data_points_via_ld = ", ".join(str(element) for element in validated_data_points_via_ld[:10])
+        inputs = {
+            "question": question,
+            "pdf_data": answer,
+            "table_data": validated_data_points_via_ld
+        }
 
-    inputs = {
-        "question": question,
-        "pdf_data": answer,
-        "table_data": validated_data_points_via_ld
-    }
+        # Augment question with data points from table
+        parsed_result = await json_parser_prompt_chain_data_analyst(inputs)
 
-    # Augment question with data points from table
-    parsed_result = await json_parser_prompt_chain_data_analyst(inputs)
-
-    if parsed_result["next_agent"] == "human_input":
-        rprint("Interupt in Data Analyst Node")
-        return Command(goto="human_input", state=state)
+        if parsed_result: 
+            if parsed_result["next_agent"] == "human_input":
+                rprint("Interupt in Data Analyst Node")
+                return Command(goto="human_input", state=state)
+            
+    if state["is_multiagent"] is False:
+        state["next_agent"]  = "__end__"
+        return state
     else:
         state["next_agent"] = parsed_result["next_agent"]
-        state["is_multiagent"] = True
         state["augmented_question"] = parsed_result["augmented_question"]
         state["table_relevant_data"] = validated_data_points_via_ld
         state["pdf_relevant_data"] = pdf_data_points
+        
         return state
 
 

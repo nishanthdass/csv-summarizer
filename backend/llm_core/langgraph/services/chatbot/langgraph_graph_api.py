@@ -31,7 +31,6 @@ workflow_pdf.add_edge("human_input", "pdf_agent")
 workflow_multi = StateGraph(state_schema=MessageState)
 
 # # Nodes
-workflow_multi.add_node("pdf_agent", pdf_agent_node)
 workflow_multi.add_node("sql_agent", sql_agent_node)
 workflow_multi.add_node("data_analyst", data_analyst_node)
 workflow_multi.add_node("human_input", human_input)

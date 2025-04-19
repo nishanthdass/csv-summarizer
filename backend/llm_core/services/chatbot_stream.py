@@ -4,108 +4,108 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 import logging
 from rich import print as rprint
-from config import LoadPostgresConfig
 from llm_core.langgraph.services.chatbot.langgraph_graph_api import workflow_sql, workflow_pdf, workflow_multi
 from llm_core.langgraph.components.agents.agents import *
 from llm_core.langgraph.utilities.utility_function import *
 from llm_core.langgraph.components.agents.agent_functions import sql_agent_function
-from llm_core.langgraph.services.chatbot.chatbot_manager import ChatbotManager
 from llm_core.langgraph.models.models import MessageInstance
 from typing import Tuple, List
 import asyncio
 from langchain_core.messages import HumanMessage
-from llm_core.langgraph.utilities.utility_function import *
+from llm_core.langgraph.utilities.chatstream_utilities import set_chat_state
 
 # Set up tracing for debugging
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
-
-db = LoadPostgresConfig()
 
 tasks = {}
 active_websockets = {}
 app = None
 memory = MemorySaver()
-manager = ChatbotManager()
 message_queue = asyncio.Queue()
 
 
-async def set_chat_state(manager, session_id, message: MessageInstance):
-    state = {
-        "current_agent": None,
-        "next_agent": None,
-        "question": HumanMessage(content=message.message),
-        "augmented_question": None,
-        "answer": None,
-        "table_name": await manager.get_chatbot_table_name(session_id),
-        "table_relevant_data": None,
-        "pdf_name": await manager.get_chatbot_pdf_name(session_id),
-        "pdf_relevant_data": None,
-        "messages": [HumanMessage(content=message.message)],
-        "agent_scratchpads": [],
-        "query_type": None,
-        "answer_retrieval_query": None,
-        "visualize_retrieval_query": None,
-        "visualize_retrieval_label": None,
-        "perform_manipulation_query": None,
-        "perform_manipulation_label": None,
-        "has_function_call": None,
-        "function_call": None,
-        "is_multiagent": False,
-        "agent_step": 0,
-        "runtime_queries": "",
-        "query_failed": None,
-    }
 
-    return state
-
-
-async def run_chatbots(session_id: str):
+async def run_chatbots(session_id: str, chatbot):
     global app
-    chatbot = await manager.get_chatbot(session_id)
-    config = chatbot["config"]
-    thread_id = config['configurable']['thread_id']
-    chat_state = chatbot["messages"]
-    user_selected_component = None
+    thread_id = chatbot.thread_id
+    # rprint("thread_id: ", thread_id)
+    framework = chatbot.framework
+    variables = chatbot.variables
+    messages = chatbot.messages
 
     while True:
+        rprint("Running chatbot...")
         try:
             # Wait for a new message (blocking until available)
             message = await message_queue.get()
+            table_set = bool(variables.get("table_name"))
+            pdf_set   = bool(variables.get("pdf_name"))
 
-            if message.table_name and not message.pdf_name:
-                user_selected_component = "sql"
-                app = workflow_sql.compile(checkpointer=memory)
-                if chat_state[thread_id][message.table_name] == None:
-                    state = await set_chat_state(manager, session_id, message)
-                    state["next_agent"] = "sql_agent"
-                    chat_state[thread_id][message.table_name] = state
-                else:
-                    state = chat_state[thread_id][message.table_name]
-                    state["question"] = HumanMessage(content=message.message)
-                    state["messages"].append(HumanMessage(content=message.message))
-            
-            elif message.pdf_name and not message.table_name:
-                user_selected_component = "pdf"
-                app = workflow_pdf.compile(checkpointer=memory)
-                if chat_state[thread_id][message.pdf_name] == None:
-                    state = await set_chat_state(manager, session_id, message)
-                    state["next_agent"] = "pdf_agent"
-                    chat_state[thread_id][message.pdf_name] = state
-                else:
-                    state = chat_state[thread_id][message.pdf_name]
-                    state["question"] = HumanMessage(content=message.message)
-                    state["messages"].append(HumanMessage(content=message.message))
-            
-            elif message.table_name and message.pdf_name:
-                user_selected_component = "multi"
+            state = await set_chat_state(chatbot, session_id, message)
+            state["question"] = HumanMessage(content=message.message)
+            state["messages"].append(HumanMessage(content=message.message))
+
+            if pdf_set:
+                rprint("multi: ", table_set and pdf_set)
                 app = workflow_multi.compile(checkpointer=memory)
-                state = await set_chat_state(manager, session_id, message)
                 state["next_agent"] = "data_analyst"
-                state["is_multiagent"] = True
+                messages['multi'] = state
+            else:
+                rprint("table_set: ", table_set)
+                app = workflow_sql.compile(checkpointer=memory)
+                state["next_agent"] = "sql_agent"
+                messages['sql_agent'] = state
+
+            # elif table_set:
+            #     rprint("table_set: ", table_set)
+            #     app = workflow_sql.compile(checkpointer=memory)
+            #     state["next_agent"] = "sql_agent"
+            #     messages['sql_agent'] = state
+            # elif pdf_set:
+            #     rprint("pdf_set: ", pdf_set)
+            #     app = workflow_pdf.compile(checkpointer=memory)
+            #     state["next_agent"] = "pdf_agent"
+            #     messages['pdf_agent'] = state
+
+            
+
+            # if message.table_name and not message.pdf_name:
+            #     user_selected_component = "sql"
+            #     app = workflow_sql.compile(checkpointer=memory)
+            #     if chat_state[thread_id][message.table_name] == None:
+            #         state = await set_chat_state(chatbot, session_id, message)
+            #         state["next_agent"] = "sql_agent"
+            #         chat_state[thread_id][message.table_name] = state
+            #     else:
+            #         state = chat_state[thread_id][message.table_name]
+            #         state["question"] = HumanMessage(content=message.message)
+            #         state["messages"].append(HumanMessage(content=message.message))
+            
+            # elif message.pdf_name and not message.table_name:
+            #     user_selected_component = "pdf"
+            #     app = workflow_pdf.compile(checkpointer=memory)
+            #     if chat_state[thread_id][message.pdf_name] == None:
+            #         state = await set_chat_state(chatbot, session_id, message)
+            #         state["next_agent"] = "pdf_agent"
+            #         chat_state[thread_id][message.pdf_name] = state
+            #     else:
+            #         state = chat_state[thread_id][message.pdf_name]
+            #         state["question"] = HumanMessage(content=message.message)
+            #         state["messages"].append(HumanMessage(content=message.message))
+            
+            # elif message.table_name and message.pdf_name:
+            #     user_selected_component = "multi"
+            #     app = workflow_multi.compile(checkpointer=memory)
+            #     state = await set_chat_state(chatbot, session_id, message)
+            #     state["next_agent"] = "data_analyst"
+            #     state["is_multiagent"] = True
 
             is_interrupted = False
             traversing_graph = True
             cur_agent = None
+            config = {"configurable": {"thread_id": f"{thread_id}"}, "recursion_limit": 100}
+            # rprint("Config: ", config)
+            # rprint("manager: ", chatbot.get_var("table_name"))
         
             words_to_find = ['<_START_>', '<_']
             word_buffer = ""
@@ -118,11 +118,9 @@ async def run_chatbots(session_id: str):
             while traversing_graph:
                 if is_interrupted:
                     message = await message_queue.get()
-                    rprint("Processing interrupted message: ", message)
-                    holder_message = await start_next_agent_stream(manager, session_id, "", next_agent, 0, thread_id)
+                    holder_message = await start_next_agent_stream(chatbot, session_id, "", next_agent, 0, thread_id)
                     holder_message = MessageInstance(**holder_message)
                     await safe_send(active_websockets, holder_message, session_id)
-                    
                     logging.debug(f"Processing message: {message}, Queue size: {message_queue.qsize()}")
                     input_arg = Command(resume=message.message)
 
@@ -130,7 +128,7 @@ async def run_chatbots(session_id: str):
                     if event["event"] == "on_chain_start":
                         cur_agent, next_agent = await handle_on_chain_start(
                             event, 
-                            manager, 
+                            chatbot, 
                             session_id, 
                             cur_agent, 
                             time_table, 
@@ -141,7 +139,7 @@ async def run_chatbots(session_id: str):
 
                         word_buffer, word_state, str_response, char_backlog = await handle_on_chat_model_stream(
                             event,
-                            manager,
+                            chatbot,
                             session_id,
                             active_websockets,
                             words_to_find,
@@ -165,18 +163,18 @@ async def run_chatbots(session_id: str):
                             run_id = event["run_id"]
                             tokens = [input_tokens, output_tokens, total_tokens, run_id, tool_call_name, model_name]
 
-                            await handle_on_chat_model_end(event, manager, session_id, active_websockets, tokens, cur_agent)
+                            await handle_on_chat_model_end(event, chatbot, session_id, active_websockets, tokens, cur_agent)
 
                     if event["event"] == "on_chain_end" and not is_interrupted:
                         traversing_graph, end_state = await handle_on_chain_end(config, event, 
-                            manager, 
+                            chatbot, 
                             session_id, 
                             active_websockets, 
                             time_table, 
                             traversing_graph)
-                        if end_state and user_selected_component == "sql":
-                            last_message = end_state["messages"][-1]
-                            chat_state[thread_id][message.table_name]["messages"].append(last_message)
+                        # if end_state:
+                        #     last_message = end_state["messages"][-1]
+                        #     messages[].append(last_message)
                         if not traversing_graph:
                             break
 
@@ -205,7 +203,7 @@ async def run_chatbots(session_id: str):
 
 
 async def handle_on_chat_model_end(event: dict, 
-                                   manager, 
+                                   chatbot, 
                                    session_id: str, 
                                    active_websockets: dict, 
                                    usage_metadata, role) -> tuple[str, str]:
@@ -215,7 +213,7 @@ async def handle_on_chat_model_end(event: dict,
     # rprint("handle_on_chat_model_end: ", event)
     end_time = time.time()
     current_time = end_time - time_table.get(str(role), 0)
-    message = await usage_agent_stream(manager, session_id, usage_metadata, role, current_time)
+    message = await usage_agent_stream(chatbot, session_id, usage_metadata, role, current_time)
     message = MessageInstance(**message)
     # rprint("message: ", message)
     await safe_send(active_websockets, message, session_id)
@@ -223,7 +221,7 @@ async def handle_on_chat_model_end(event: dict,
 
 async def handle_on_chain_start(
     event: dict,
-    manager,
+    chatbot,
     session_id: str,
     cur_agent: str,
     time_table: dict,
@@ -234,19 +232,16 @@ async def handle_on_chain_start(
     Handle the 'on_chain_start' event. Return updated (cur_agent, next_agent).
     """
     next_agent = None
-    data = event.get("data", {})     
+    data = event.get("data", {})
     if isinstance(data, dict) and "input" in data:
         input_data = data["input"]
         if isinstance(input_data, dict) and "next_agent" in input_data:
-            # rprint("handle_on_chain_start INPUT: ", input_data)
             next_agent = input_data["next_agent"]
             if cur_agent != next_agent and "has_function_call" not in input_data:
                 cur_agent = next_agent
                 if cur_agent != "__end__":
-                    # rprint("Condition 1")
                     start_time = (time_table[str(next_agent)])
-                    # rprint("handle_on_chain_start: ", cur_agent, next_agent, thread_id)
-                    holder_message = await start_next_agent_stream(manager, session_id, "", next_agent, start_time, thread_id)
+                    holder_message = await start_next_agent_stream(chatbot, session_id, "", next_agent, start_time, thread_id)
                     holder_message = MessageInstance(**holder_message)
                     await safe_send(active_websockets, holder_message, session_id)
                     return cur_agent, next_agent
@@ -262,7 +257,7 @@ async def handle_on_chain_start(
                     if input_data['query_failed'] is False:
                         # rprint("Condition 2")
                         message_str = sql_agent_function(table_name=input_data['table_name'], query=input_data['answer_retrieval_query'], role=role, query_type=query_type)
-                        end_message = await query_agent_stream(manager, 
+                        end_message = await query_agent_stream(chatbot, 
                                                                session_id, 
                                                                " <br><br> Query: " + input_data['answer_retrieval_query'] + "<br><br> Query Result: <br>" + message_str["Result"], 
                                                                role, 
@@ -276,7 +271,7 @@ async def handle_on_chain_start(
                         time_table[str(role)] = 0
                     else:
 
-                        end_message = await query_agent_stream(manager, 
+                        end_message = await query_agent_stream(chatbot, 
                                                                session_id,
                                                                " <br><br> Query: " + str(input_data['answer_retrieval_query']), 
                                                                role, 
@@ -289,7 +284,7 @@ async def handle_on_chain_start(
                         time_table[str(role)] = 0
                 if input_data["query_type"] == "manipulation":
                     finish_time = (end_time - time_table[str(role)])
-                    end_message = await query_agent_stream(manager, session_id, " <br><br> Query: " + input_data['perform_manipulation_query'], role, finish_time, str(input_data['perform_manipulation_query']), str(input_data['perform_manipulation_label']), str(query_type))
+                    end_message = await query_agent_stream(chatbot, session_id, " <br><br> Query: " + input_data['perform_manipulation_query'], role, finish_time, str(input_data['perform_manipulation_query']), str(input_data['perform_manipulation_label']), str(query_type))
                     end_message = MessageInstance(**end_message)
                     # rprint("end_message handle_on_chain_start: ", end_message)
                     await safe_send(active_websockets, end_message, session_id)
@@ -299,7 +294,7 @@ async def handle_on_chain_start(
 
 async def handle_on_chat_model_stream(
     event: dict,
-    manager,
+    chatbot,
     session_id: str,
     active_websockets,
     words_to_find: List[str],
@@ -321,7 +316,7 @@ async def handle_on_chat_model_stream(
         role = event['metadata']['langgraph_node']
         end_time = time.time()
         current_time = end_time - time_table.get(str(role), 0)
-        message = await char_agent_stream(manager, session_id, word_buffer, role, current_time)
+        message = await char_agent_stream(chatbot, session_id, word_buffer, role, current_time)
         message = MessageInstance(**message)
         await safe_send(active_websockets, message, session_id)
 
@@ -331,7 +326,7 @@ async def handle_on_chat_model_stream(
 async def handle_on_chain_end(
     config,
     event: dict,
-    manager,
+    chatbot,
     session_id: str,
     active_websockets: dict,
     time_table: dict,

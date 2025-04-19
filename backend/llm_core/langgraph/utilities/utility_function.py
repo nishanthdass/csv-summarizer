@@ -126,8 +126,8 @@ async def start_next_agent_stream(manager, session_id, message_str: str, next_ag
     message = {
                     "event": "on_chain_start",
                     "message": message_str,
-                    "table_name": await manager.get_chatbot_table_name(session_id),
-                    "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+                    "table_name": manager.get_var("table_name"),
+                    "pdf_name": manager.get_var("pdf_name"),
                     "role": next_agent,
                     "time": float_time,
                     "thread_id": thread_id
@@ -142,8 +142,8 @@ async def char_agent_stream(manager, session_id, word_buffer: str, role: str, ti
     message = {
             "event": "on_chat_model_stream", 
             "message": word_buffer,
-            "table_name": await manager.get_chatbot_table_name(session_id),
-            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+            "table_name": manager.get_var("table_name"),
+            "pdf_name": manager.get_var("pdf_name"),
             "role": role,
             "time": float_time,
             }
@@ -155,8 +155,8 @@ async def usage_agent_stream(manager, session_id, usage_metadata: list, role: st
     float_time = float(time_int) / 1000
     message = {
             "event": "on_chat_model_end", 
-            "table_name": await manager.get_chatbot_table_name(session_id),
-            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+            "table_name": manager.get_var("table_name"),
+            "pdf_name": manager.get_var("pdf_name"),
             "input_tokens": usage_metadata[0],
             "output_tokens": usage_metadata[1],
             "total_tokens": usage_metadata[2],
@@ -176,8 +176,8 @@ async def query_agent_stream(manager, session_id, message_str: str, role: str, t
     message = {
             "event": "on_query_stream", 
             "message": message_str,
-            "table_name": await manager.get_chatbot_table_name(session_id),
-            "pdf_name": await manager.get_chatbot_pdf_name(session_id),
+            "table_name": manager.get_var("table_name"),
+            "pdf_name": manager.get_var("pdf_name"),
             "role": role,
             "time": float_time,
             "visualizing_query": visualizing_query,

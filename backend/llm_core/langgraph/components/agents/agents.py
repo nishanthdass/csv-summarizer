@@ -13,7 +13,7 @@ import time
 import logging
 
 # --- Provides response time tracking for each agent ---
-time_table = { "pdf_agent": 0, "sql_agent": 0, "data_analyst": 0, "human_input": 0}
+time_table = { "sql_agent": 0, "data_analyst": 0, "human_input": 0}
 
 
 # --- Define Agents ---
@@ -98,27 +98,6 @@ async def sql_agent_node(state: MessageState) -> MessageState:
         return Command(goto="human_input", update={"query_type": query_type})    
     else:
         state["next_agent"] = "__end__"
-
-    return state
-
-
-async def pdf_agent_node(state: MessageState) -> MessageState:
-    """PDF agent takes a question and returns the answer to the question along with data points from the PDF."""
-    time_table["pdf_agent"] = time.time()
-    state["current_agent"] = "pdf_agent"
-    question = state["question"].content
-
-    input_variables={"question": question, "pdf_name": state["pdf_name"]}
-    # response includes answer and next_agent
-    response = kg_retrieval_chain(PDFAGENTPROMPTTEMPLATE_A, input_variables)
-
-    answer = await convert_to_dict(response["answer"])
-
-    response = {}
-    response["answer"] = answer["response"]
-    response["next_agent"] = "__end__"
-
-    state = await set_state(state, response)
 
     return state
 

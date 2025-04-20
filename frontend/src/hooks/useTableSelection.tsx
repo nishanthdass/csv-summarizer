@@ -229,15 +229,17 @@ export const useTableSelection = () => {
             selectedCells: oldSelection.selectedCells.filter((cell) => cell.ctid !== ctid),
           },
       }
-      }else if (rowAlreadySelected && numberOfSelectedCells === 0) {
-          const newCells = currentTable?.data.header 
-              ? Object.entries(currentTable.data.header).map(([columnName]) => ({
-                  ctid,
-                  value: currentTable.data.rows.find((row: any) => row.ctid === ctid)[columnName], 
-                  columnName: `${currentTableName}_${columnName}` 
-                }))
-                .filter((cell) => cell.columnName !== columnName)
-              : [];
+      }else if (currentTable && rowAlreadySelected && numberOfSelectedCells === 0) {
+          const row = currentTable.data.rows.find((r: any) => r.ctid === ctid);
+          const newCells = row
+            ? Object.keys(currentTable.data.header).map((colName) => ({
+                ctid,
+                value: row[colName],                       // safe now
+                columnName: `${currentTableName}_${colName}`,
+              }))
+                .filter((cell) => cell.columnName !== columnName) // keep your original filter
+            : [];
+
       
           return {
             ...prevSelections,

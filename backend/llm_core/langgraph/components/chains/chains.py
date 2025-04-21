@@ -41,14 +41,14 @@ async def json_parser_prompt_chain(prompt, inputs):
     return response
 
 
-async def json_parser_prompt_chain_data_analyst(inputs):
+async def json_parser_prompt_augment_question(inputs):
     """Allow user to ask a question to the model and get a json response. User can change the model."""
     model = ChatOpenAI( model=openai_var.openai_model, 
                         max_tokens=None, 
                         stream_usage=True, 
                         temperature=0 )
     parser = JsonOutputParser(pydantic_object=DataAnalystResponse)
-    prompt = create_data_analyst_prompt(format_instructions=parser.get_format_instructions())
+    prompt = create_augment_question_prompt(format_instructions=parser.get_format_instructions())
     chain = prompt | model | parser
     response = await chain.ainvoke(inputs)
 

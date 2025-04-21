@@ -51,11 +51,14 @@ def levenshtein_dist(table_name: str, words: str):
         columns_and_types = get_all_columns_and_types(table_name)
     
         results = []
+        non_text_columns = []
 
         for word in words_list:
             query_parts = []
     
-            for column_name, _ in columns_and_types:
+            for column_name, type in columns_and_types:
+                if type == "text":
+                    non_text_columns.append(column_name)
                 query_parts.append(f"""
                     SELECT '{column_name}' AS column_name,
                            {column_name}::text AS column_value,
@@ -70,13 +73,18 @@ def levenshtein_dist(table_name: str, words: str):
             rows = cur.fetchall()
             for row in rows:
                 results.append((word, *row))
-    
+        
+        
+        # remove text types
+        results = [result for result in results if result[1] not in non_text_columns]
+
         seen = set()
         unique_results = []
         for result in results:
             if result not in seen:
                 seen.add(result)
                 unique_results.append(result)
+        
 
         filtered_results = [
             r for r in unique_results

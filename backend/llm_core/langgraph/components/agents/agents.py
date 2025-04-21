@@ -4,11 +4,12 @@ from llm_core.langgraph.components.prompts.templates import *
 from llm_core.langgraph.components.chains.chains import json_parser_prompt_chain, trimmer, kg_retrieval_chain
 from langchain_core.messages import HumanMessage
 from rich import print as rprint
-from llm_core.langgraph.components.chains.chains import call_sql_agent, json_parser_prompt_chain_data_analyst
+from llm_core.langgraph.components.chains.chains import call_sql_agent, json_parser_prompt_augment_question
 from langgraph.types import interrupt, Command
 from llm_core.langgraph.utilities.utility_function import *
 from db.tabular.postgres_utilities import get_all_columns_and_types
 from db.tabular.table_operations import levenshtein_dist
+from db.tabular.table_embeddings import retrieve_table_embeddings
 import time
 import logging
 
@@ -25,8 +26,7 @@ async def sql_agent_node(state: MessageState) -> MessageState:
     # Get query type
     try:
         question = state["question"].content
-        # if "augmented_question" in state and (state["augmented_question"] != "" and state["augmented_question"] is not None):
-        #     question = state["augmented_question"]
+        
         if state["query_type"] is None:
             input_variables={"input": question}
             response = await json_parser_prompt_chain(SQLQUERYTYPEAGENTPROMPTTEMPLATE, input_variables)
@@ -39,39 +39,54 @@ async def sql_agent_node(state: MessageState) -> MessageState:
             trimmed_messages = trimmer(state)
             question = state["question"].content
 
-            # Use the augmented question and get supporting data points from last agent 
             if state["query_type"] == "retrieval" and state["is_multiagent"] is True:
                 answer = state["answer"]
                 pdf_data_points = state["pdf_relevant_data"]
                 relevant_columns = state["table_relevant_data"]
-                rprint("answer: ", answer)
-                rprint("pdf_data_points: ", pdf_data_points)
-                rprint("relevant_columns: ", relevant_columns)
-
 
                 # Get data from table by comparing pdf data points with levenshtein distance of values in table
                 ranked_results_via_ld = levenshtein_dist(state["table_name"], pdf_data_points)
 
-                relevant_columns_from_pdf = [col.strip() for col in relevant_columns.split(",")]
-                validated_data_points_via_ld = []
+                # Get data from table by comparing pdf data points with cosine similarity
+                ranked_results_via_similarity = retrieve_table_embeddings(state["table_name"], pdf_data_points, k=10)
 
+                relevant_columns_from_pdf = [col.strip() for col in relevant_columns.split(",")]
+
+                table_data_points = {}
+
+                # consolidate data
                 for col in relevant_columns_from_pdf:
                     for data in ranked_results_via_ld:
+                        # if value is None, make empty array
                         if data[0] == col:
-                            data_str = "( Column Name: " + str(data[0]) + ", Value: " + str(data[1]) + " )"
-                            validated_data_points_via_ld.append(data_str)
+                            if table_data_points.get(col) is None:
+                                table_data_points[col] = []
+                            table_data_points[col].append(data[1])
+                
+                for col in relevant_columns_from_pdf:
+                    for result in ranked_results_via_similarity:
+                        for data in result[0].metadata:
+                            if data == col:
+                                if table_data_points.get(col) is None:
+                                    table_data_points[col] = []
+                                table_data_points[col].append(result[0].metadata[data])
 
-                validated_data_points_via_ld = ", ".join(str(element) for element in validated_data_points_via_ld[:10])
+                # build a string from the data points
+                validated_data_points = ""
+                for col in table_data_points:
+                    validated_data_points += f"Column Name: {col}, Values: {table_data_points[col]}\n"
+
+                rprint("validated_data_points: ", validated_data_points)
 
                 inputs = {
                     "question": question,
                     "pdf_data": answer,
-                    "table_data": validated_data_points_via_ld
+                    "table_data": validated_data_points,
                 }
                 rprint("inputs: ", inputs)
 
                 # Augment question with data points from table
-                parsed_result = await json_parser_prompt_chain_data_analyst(inputs)
+                parsed_result = await json_parser_prompt_augment_question(inputs)
 
                 rprint("parsed_result: ", parsed_result)
 
@@ -79,11 +94,11 @@ async def sql_agent_node(state: MessageState) -> MessageState:
                     if parsed_result["next_agent"] == "human_input":
                         rprint("Interupt in Data Analyst Node")
                         return Command(goto="human_input", state=state)
-                # rprint("question: ", question)
-                # rprint("data_points: ", data_points)
+
                 question = parsed_result["augmented_question"]
                 data_points = parsed_result["table_data_points"]
                 prompt = await create_sql_multiagent_retrieval_prompt(question, data_points)
+                rprint("create_sql_multiagent_retrieval_prompt: ", prompt)
 
             # Below conditions occur when the user directly communicates with the SQL Agent without going through any other agent
             if state["is_multiagent"] is False:
@@ -152,13 +167,10 @@ async def data_analyst_node(state: MessageState) -> MessageState:
       3. Queries the PDF knowledge graph using cosine similarity to find relevant information 
          based on the user’s question.
       4. Parses the PDF response, extracts an answer, data points, and suggested relevant columns.
-      5. Uses Levenshtein distance to match the PDF’s data points against rows in the database table, 
-         focusing on the columns identified as relevant.
-      6. Integrates the matched table data and the PDF data points into the user's question 
-      7. Returns the updated message state, which includes the augmented question
+      5. Returns the updated state with the retreived information and recommended columns.
     """
     table_name = state["table_name"]
-    rprint("table_name: ", table_name)
+
     if not table_name:
         state["is_multiagent"] = False
     else:
@@ -180,48 +192,16 @@ async def data_analyst_node(state: MessageState) -> MessageState:
         input_variables={"question": question, "columns": col_str, "pdf_name": pdf_name}
         pdf_retrieval = kg_retrieval_chain(PDFAGENTPROMPTTEMPLATE_B, input_variables)
         pdf_retrieval_answer = await convert_to_dict(pdf_retrieval["answer"])
+        rprint("pdf_retrieval_answer: ", pdf_retrieval_answer)
 
         answer = pdf_retrieval_answer["response"]
         pdf_data_points = pdf_retrieval_answer["data_points"]
         relevant_columns = pdf_retrieval_answer["relevant_columns"]
-
-        # Get data from table by comparing pdf data points with levenshtein distance of values in table
-        # ranked_results_via_ld = levenshtein_dist(table_name, pdf_data_points)
-
-        # relevant_columns_from_pdf = [col.strip() for col in relevant_columns.split(",")]
-        # validated_data_points_via_ld = []
-
-        # for col in relevant_columns_from_pdf:
-        #     for data in ranked_results_via_ld:
-        #         if data[0] == col:
-        #             data_str = "( Column Name: " + str(data[0]) + ", Value: " + str(data[1]) + " )"
-        #             validated_data_points_via_ld.append(data_str)
-
-        # validated_data_points_via_ld = ", ".join(str(element) for element in validated_data_points_via_ld[:10])
-
-        # inputs = {
-        #     "question": question,
-        #     "pdf_data": answer,
-        #     "table_data": validated_data_points_via_ld
-        # }
-
-        # # Augment question with data points from table
-        # parsed_result = await json_parser_prompt_chain_data_analyst(inputs)
-
-        # if parsed_result: 
-        #     if parsed_result["next_agent"] == "human_input":
-        #         rprint("Interupt in Data Analyst Node")
-        #         return Command(goto="human_input", state=state)
             
     if state["is_multiagent"] is False:
         state["next_agent"]  = "__end__"
         return state
     else:
-        # state["next_agent"] = parsed_result["next_agent"]
-        # state["augmented_question"] = parsed_result["augmented_question"]
-        # state["table_relevant_data"] = validated_data_points_via_ld
-        # state["pdf_relevant_data"] = pdf_data_points
-
         state["next_agent"] = "sql_agent"
         state["answer"] = answer
         state["agent_scratchpads"].append(answer)

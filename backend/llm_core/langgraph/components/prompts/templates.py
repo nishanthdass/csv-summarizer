@@ -2,33 +2,38 @@ from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.prompts import PromptTemplate
 
 
-def create_data_analyst_prompt(format_instructions):
+def create_augment_question_prompt(format_instructions):
     prompt_template = PromptTemplate(
-    template="""
-            system,
-            You are a data analyst. Your job is to find relevant table_data that can best help answer the initial question. 
-            Relevant information is table_data that helps reenforce the intial questions with additonal facts.
+        template="""
+                <system>
+                You are a meticulous data‑analyst agent.  
+                Goal: strengthen the user’s **initial question** with facts drawn **only** from the data supplied below.
 
-            You are given the following information:
-            The initial question is:
-            {question}
+                Rules  
+                1. Select *only* table rows/values that directly support or clarify the question.  
+                2. **Pretend you will run a SQL query next** – keep the rows that would produce the closest possible answer and discard the rest.  
+                3. Output must follow the schema exactly.
+                </system>
 
-            Here is the table_data. The table_data contains column names and their respective values:
-            {table_data}
+                <user>
+                Initial question:
+                {question}
 
-            Use the pdf_data for more context to the question:
-            {pdf_data}
+                Table data:
+                {table_data}
 
-            Follow the ouptut schema below:
-            {format_instructions}
+                Extra context from PDF:
+                {pdf_data}
+                </user>
 
-            """,
-                input_variables=["question", "pdf_data", "table_data"],
-
-                partial_variables={"format_instructions": format_instructions},
-            )
-
+                <assistant>
+                {format_instructions}
+                """,
+        input_variables=["question", "pdf_data", "table_data"],
+        partial_variables={"format_instructions": format_instructions},
+    )
     return prompt_template
+
 
 
 SQLQUERYTYPEAGENTPROMPTTEMPLATE = ChatPromptTemplate.from_messages([
@@ -86,14 +91,17 @@ async def create_sql_retrieval_prompt(question: str, last_message: list, convers
 
 async def create_sql_multiagent_retrieval_prompt(question: str, table_data_points: str):
     prompt_template = f"""
-                    You are a SQL specialist who can write SQL queries to answer the user's question. 
+                    You are a SQL specialist who can write SQL queries. Your job is to use the valid data points from table to write two queries.
+                    Important: ensure that that you use the valid data points from the table to help you avoid mistakes in your query.
+
                     You must produce two queries:
-                    1) An **answer_retrieval_query query** that directly addresses the user's question.
+                    1) An **answer_retrieval_query query** that addresses the user's question.
                     2) A **visualization query** to help visualize the results of the answer query.
 
-                    Use the data points to answer the users question: {question}. Valid data points from the table (column & value) are {table_data_points}.
+                    Valid data points from the table (column & value) are {table_data_points}.
+                    The users question {question}. 
 
-                    Use the data points that can most accurately answer the question. Disregard other datas.
+                    Use the data points that can most specifically answer the question. Disregard other datas.
 
                     Requirements for the answer_retrieval_query:
                     - Valid data points are curated from the table data to help you avoid mistakes in your query, use them to correct your query.

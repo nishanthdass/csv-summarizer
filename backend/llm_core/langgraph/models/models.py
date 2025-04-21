@@ -97,6 +97,5 @@ class DataAnalystResponse(BaseModel):
     current_agent: str = Field(description="data_analyst")
     next_agent: str = Field(description="sql_agent")
     question: str = Field(description="The initial question.")
-    augmented_question: str = Field( description="The augmented question with data points from the table_data and pdf_data")
-    answer: str = Field( description="<_START_> describe the Data points from the table that can help answer the question <_END_> ")
-    table_data_points: str = Field(description="Supporting data that can help write an accurate sql query. More is better")
+    augmented_question: str = Field( description="The augmented question with numerical and/or textual table data that can help answer the question")
+    table_data_points: str = Field(description="Supporting table data that can help write an accurate sql query. More is better")

@@ -23,6 +23,24 @@ def create_embeddings_of_table_rows(table_name: str, docs: list):
         print(f"Error creating embeddings for table {table_name}: {str(e)}")
 
 
+def retrieve_table_embeddings(table_name: str, query: str, k: int) -> list[tuple[str, float]]:
+    """
+    Retrieves embeddings of table rows that are similar to the query.
+    Returns a list of (row_id, similarity_score) tuples.
+    """
+    try:
+        collection_name = table_name + "_collection"
+        vector_store = PGVector(
+            embeddings=get_embedder(512),
+            collection_name=collection_name,
+            connection=postgres_var.get_db_url(),
+        )
+        return vector_store.similarity_search_with_score(query, k=k)
+    except Exception as e:
+        print(f"Error retrieving embeddings for table {table_name}: {str(e)}")
+        return []
+
+
 def get_docs_from_rows(table_name: str) -> list[Document]:
     """
     Fetches all rows from a table and converts them into Langchain Documents.
@@ -30,6 +48,6 @@ def get_docs_from_rows(table_name: str) -> list[Document]:
     """
     rows = fetch_all_rows_from_table(table_name)
     columns_types = get_all_columns_and_types(table_name)
-    columns = ["id"] + [col[0] for col in columns_types]
+    columns = [col[0] for col in columns_types]
     return create_langchain_docs_from_rows(table_name, rows, columns)
 
